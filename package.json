@@ -10,7 +10,13 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "db:init": "npx ts-node scripts/initDatabase.ts",
+    "db:seed": "npx ts-node scripts/seedPlants.ts",
+    "db:seed:env": "npx ts-node scripts/seedEnvironment.ts",
+    "db:migrate": "npx prisma migrate dev",
+    "db:generate": "npx prisma generate",
+    "db:studio": "npx prisma studio"
   },
   "keywords": [
     "ai",
