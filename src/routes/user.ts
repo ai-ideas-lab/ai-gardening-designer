@@ -81,7 +81,7 @@ router.get('/stats', asyncHandler(async (req: AuthRequest, res) => {
   };
 
   res.json(response);
-});
+}));
 
 // Update user preferences
 router.put('/preferences', asyncHandler(async (req: AuthRequest, res) => {

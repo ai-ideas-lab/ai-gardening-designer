@@ -1,3 +1,5 @@
+import { Request } from 'express';
+
 // Core Types
 export interface User {
   id: string;

@@ -1,254 +1,308 @@
 import { PrismaClient } from '@prisma/client';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const prisma = new PrismaClient();
 
-// Weather data for major Chinese cities
-const weatherData = [
-  {
-    location: "北京",
-    date: "2026-03-15",
-    temperature: 15.5,
-    humidity: 45,
-    precipitation: 2.3,
-    windSpeed: 12.5,
-    weatherCondition: "partly-cloudy",
-    uvIndex: 6
-  },
-  {
-    location: "上海",
-    date: "2026-03-15",
-    temperature: 18.2,
-    humidity: 65,
-    precipitation: 8.1,
-    windSpeed: 8.3,
-    weatherCondition: "rainy",
-    uvIndex: 3
-  },
-  {
-    location: "广州",
-    date: "2026-03-15",
-    temperature: 22.8,
-    humidity: 75,
-    precipitation: 15.2,
-    windSpeed: 6.7,
-    weatherCondition: "cloudy",
-    uvIndex: 4
-  },
-  {
-    location: "深圳",
-    date: "2026-03-15",
-    temperature: 23.5,
-    humidity: 78,
-    precipitation: 12.8,
-    windSpeed: 7.2,
-    weatherCondition: "overcast",
-    uvIndex: 2
-  },
-  {
-    location: "杭州",
-    date: "2026-03-15",
-    temperature: 17.3,
-    humidity: 58,
-    precipitation: 5.6,
-    windSpeed: 9.8,
-    weatherCondition: "sunny",
-    uvIndex: 7
-  }
-];
-
-// Default plant recommendations for different conditions
-const defaultRecommendations = [
-  {
-    conditions: {
-      light: "low",
-      water: "moderate",
-      difficulty: 1
-    },
-    recommendations: [
-      { name: "绿萝", reason: "耐阴性强，适合室内养护" },
-      { name: "吊兰", reason: "适应性强，容易繁殖" },
-      { name: "虎皮兰", reason: "极度耐阴，几乎不需要照料" }
-    ]
-  },
-  {
-    conditions: {
-      light: "medium",
-      water: "moderate",
-      difficulty: 2
-    },
-    recommendations: [
-      { name: "薄荷", reason: "需要半阴环境，生长迅速" },
-      { name: "吊兰", reason: "中等光照下表现良好" },
-      { name: "龟背竹", reason: "喜散射光，形态优美" }
-    ]
-  },
-  {
-    conditions: {
-      light: "full-sun",
-      water: "minimal",
-      difficulty: 1
-    },
-    recommendations: [
-      { name: "仙人掌", reason: "耐晒耐旱，新手友好" },
-      { name: "多肉植物", reason: "喜欢阳光，储水能力强" },
-      { name: "石莲花", reason: "耐晒，形态独特" }
-    ]
-  }
-];
-
 async function main() {
-  console.log('🌍 初始化AI园艺设计师环境数据...');
+  console.log('🌱 开始导入环境数据...');
 
-  // Create weather data
-  console.log('🌤️ 导入天气数据...');
-  for (const weather of weatherData) {
-    await prisma.weather.upsert({
-      where: {
-        location_date: {
-          location: weather.location,
-          date: weather.date
-        }
-      },
-      update: weather,
-      create: weather
-    });
-  }
+  try {
+    // 导入阳台类型数据
+    console.log('🏠 导入阳台类型数据...');
+    const balconyTypes = [
+      { name: '小阳台', description: '面积小于5平方米的小型阳台，适合垂直种植' },
+      { name: '中等阳台', description: '面积5-15平方米的普通阳台，可放置花架和种植箱' },
+      { name: '大阳台', description: '面积大于15平方米的大型阳台，可种植多种植物' },
+      { name: '露台', description: '开放式露台空间，光照充足，适合多种植物' },
+      { name: '室内窗台', description: '室内窗台环境，光照有限，适合耐阴植物' },
+      { name: '天台', description: '屋顶天台，环境恶劣，需要特殊防护' }
+    ];
 
-  // Create default recommendations
-  console.log('💡 导入默认推荐规则...');
-  for (const rec of defaultRecommendations) {
-    const plantNames = rec.recommendations.map(r => r.name);
-    const plants = await prisma.plant.findMany({
-      where: { name: { in: plantNames } }
-    });
-
-    if (plants.length > 0) {
-      await prisma.recommendation.create({
-        data: {
-          type: 'plant',
-          title: `适合${JSON.stringify(rec.conditions)}条件植物推荐`,
-          description: `基于光照、水分和养护难度推荐适合的植物`,
-          data: {
-            conditions: rec.conditions,
-            recommendations: rec.recommendations,
-            plantIds: plants.map(p => p.id)
-          },
-          confidence: 0.8,
-          userId: 'default-user' // This would normally be a real user ID
-        }
-      });
-    }
-  }
-
-  // Create sample communities
-  console.log('👥 创建示例社区...');
-  const communities = [
-    {
-      name: "阳台园艺爱好者",
-      description: "分享阳台种植经验和技巧，互相学习成长",
-      isPublic: true,
-      rules: "1. 互相尊重，友好交流\n2. 分享真实经验\n3. 禁止广告内容"
-    },
-    {
-      name: "新手园丁交流群",
-      description: "新手互助，共同成长，从零开始学习园艺",
-      isPublic: true,
-      rules: "1. 多问多学\n2. 分享失败经验也很宝贵\n3. 耐心解答新手问题"
-    },
-    {
-      name: "香草植物爱好者",
-      description: "专注于香草植物的种植、使用和分享",
-      isPublic: true,
-      rules: "1. 分享香草种植技巧\n2. 讨论香草的用途\n3. 交流品种选择"
-    }
-  ];
-
-  for (const community of communities) {
-    await prisma.community.create({
-      data: community
-    });
-  }
-
-  // Create sample posts
-  console.log('📝 创建示例帖子...');
-  const samplePosts = [
-    {
-      title: "我的第一个阳台小花园",
-      content: "经过一个月的努力，我的小阳台终于有了一些绿意！种植了绿萝、薄荷和几株多肉植物，虽然有些经验不足，但看到它们慢慢长大真的很开心。",
-      communityName: "阳台园艺爱好者",
-      authorName: "园艺新手",
-      views: 156,
-      comments: 23
-    },
-    {
-      title: "仙人掌浇水心得分享",
-      content: "养仙人掌一年多了，终于摸到了一些门道。总结一下：1. 浇水要少而频，2. 土壤一定要透气，3. 冬季基本可以不浇水。希望对新手有帮助！",
-      communityName: "新手园丁交流群",
-      authorName: "多肉达人",
-      views: 89,
-      comments: 15
-    },
-    {
-      title: "薄荷的多种用途",
-      content: "薄荷不仅是很好的观赏植物，还有很多实用价值：泡茶、驱蚊、做调料、提神醒脑...今天分享一下我的薄荷种植心得。",
-      communityName: "香草植物爱好者",
-      authorName: "香草专家",
-      views: 203,
-      comments: 31
-    }
-  ];
-
-  for (const post of samplePosts) {
-    const community = await prisma.community.findFirst({
-      where: { name: post.communityName }
-    });
-    
-    if (community) {
-      // Create the post
-      const newPost = await prisma.post.create({
-        data: {
-          title: post.title,
-          content: post.content,
-          communityId: community.id,
-          authorId: 'sample-author', // This would normally be a real user ID
-          isPinned: false,
-          views: post.views
-        }
+    for (const type of balconyTypes) {
+      const existing = await prisma.balconyType.findUnique({
+        where: { name: type.name }
       });
 
-      // Create some sample comments
-      const comments = [
-        "分享得很好，受益匪浅！",
-        "有同样的经验，确实需要耐心",
-        "请问在哪里可以买到这么好的植物？",
-        "期待更多分享！",
-        "图片看起来很棒，种植技术不错"
-      ];
-
-      for (const comment of comments.slice(0, post.comments)) {
-        await prisma.comment.create({
-          data: {
-            content: comment,
-            postId: newPost.id,
-            authorId: 'sample-commenter' // This would normally be a real user ID
-          }
+      if (!existing) {
+        await prisma.balconyType.create({
+          data: type
         });
+        console.log(`  ✅ 创建阳台类型: ${type.name}`);
       }
     }
-  }
 
-  console.log('✅ 环境数据初始化完成！');
-  console.log(`🌤️ 导入了 ${weatherData.length} 条天气数据`);
-  console.log(`💡 导入了 ${defaultRecommendations.length} 条推荐规则`);
-  console.log(`👥 创建了 ${communities.length} 个示例社区`);
-  console.log(`📝 创建了 ${samplePosts.length} 个示例帖子`);
+    // 导入植物类别数据
+    console.log('🌿 导入植物类别数据...');
+    const plantCategories = [
+      { name: '观叶植物', description: '以观赏叶片为主的植物，如绿萝、龟背竹等' },
+      { name: '开花植物', description: '会开出美丽花朵的植物，如茉莉、杜鹃等' },
+      { name: '多肉植物', description: '具有储水能力的多肉植物，如仙人掌、芦荟等' },
+      { name: '香草植物', description: '具有香气的草本植物，可食用或药用' },
+      { name: '蔬菜', description: '可食用的蔬菜植物，适合家庭种植' },
+      { name: '水果', description: '可食用的水果植物，需要较大空间' },
+      { name: '攀援植物', description: '需要攀爬支撑的植物，如葡萄、常春藤等' },
+      { name: '水生植物', description: '适合水培或水环境的植物' }
+    ];
+
+    for (const category of plantCategories) {
+      const existing = await prisma.plantCategory.findUnique({
+        where: { name: category.name }
+      });
+
+      if (!existing) {
+        await prisma.plantCategory.create({
+          data: category
+        });
+        console.log(`  ✅ 创建植物类别: ${category.name}`);
+      }
+    }
+
+    // 导入养护活动类型
+    console.log('🔄 导入养护活动类型...');
+    const activityTypes = [
+      { name: '浇水', icon: '💧', frequency: 'daily', description: '给植物浇水保持土壤湿润' },
+      { name: '施肥', icon: '🌱', frequency: 'weekly', description: '给植物施用肥料促进生长' },
+      { name: '修剪', icon: '✂️', frequency: 'monthly', description: '修剪枯枝败叶，促进新芽生长' },
+      { name: '换盆', icon: '🪴', frequency: 'yearly', description: '更换更大的花盆，提供更多生长空间' },
+      { name: '病虫害防治', icon: '🚨', frequency: 'weekly', description: '检查并防治植物病虫害' },
+      { name: '清洁', icon: '🧹', frequency: 'weekly', description: '清洁叶片和花盆表面' },
+      { name: '转动花盆', icon: '🔄', frequency: 'weekly', description: '转动花盆使植物均匀接受光照' },
+      { name: '检查根系', icon: '🔍', frequency: 'monthly', description: '检查植物根系健康状况' }
+    ];
+
+    for (const activity of activityTypes) {
+      const existing = await prisma.activityType.findUnique({
+        where: { name: activity.name }
+      });
+
+      if (!existing) {
+        await prisma.activityType.create({
+          data: activity
+        });
+        console.log(`  ✅ 创建养护活动: ${activity.name}`);
+      }
+    }
+
+    // 导入光照条件
+    console.log('☀️ 导入光照条件...');
+    const lightConditions = [
+      { level: 'full-sun', name: '充足阳光', description: '每天需要6-8小时直射阳光', icon: '☀️' },
+      { level: 'partial-sun', name: '半阴环境', description: '每天需要4-6小时散射光', icon: '⛅' },
+      { level: 'partial-shade', name: '半阴遮阳', description: '每天需要2-4小时散射光', icon: '🌤️' },
+      { level: 'shade', name: '阴凉环境', description: '只需要少量散射光或无直射光', icon: '🌙' },
+      { level: 'low', name: '低光照', description: '适合完全无直射光的环境', icon: '🌑' }
+    ];
+
+    for (const light of lightConditions) {
+      const existing = await prisma.lightCondition.findUnique({
+        where: { level: light.level }
+      });
+
+      if (!existing) {
+        await prisma.lightCondition.create({
+          data: light
+        });
+        console.log(`  ✅ 创建光照条件: ${light.name}`);
+      }
+    }
+
+    // 导入浇水频率
+    console.log('💧 导入浇水频率...');
+    const wateringFrequencies = [
+      { frequency: 'frequent', name: '频繁浇水', description: '每天或每两天浇水一次', icon: '💧💧💧' },
+      { frequency: 'moderate', name: '中等浇水', description: '每3-5天浇水一次', icon: '💧💧' },
+      { frequency: 'minimal', name: '少量浇水', description: '每周或更长时间浇水一次', icon: '💧' },
+      { frequency: 'seasonal', name: '季节性浇水', description: '根据季节调整浇水频率', icon: '🍂🌞❄️' }
+    ];
+
+    for (const watering of wateringFrequencies) {
+      const existing = await prisma.wateringFrequency.findUnique({
+        where: { frequency: watering.frequency }
+      });
+
+      if (!existing) {
+        await prisma.wateringFrequency.create({
+          data: watering
+        });
+        console.log(`  ✅ 创建浇水频率: ${watering.name}`);
+      }
+    }
+
+    // 导入植物功效
+    console.log('✨ 导入植物功效...');
+    const plantBenefits = [
+      { name: 'air-purification', icon: '🌬️', description: '净化空气，吸收有害气体' },
+      { name: 'easy-care', icon: '👍', description: '容易养护，适合新手' },
+      { name: 'fragrant', icon: '🌸', description: '具有香气，可提神醒脑' },
+      { name: 'medicinal', icon: '💊', description: '具有药用价值' },
+      { name: 'edible', icon: '🍃', description: '可食用，可入菜' },
+      { name: 'pet-safe', icon: '🐶', description: '对宠物无毒安全' },
+      { name: 'pest-repellent', icon: '🚫🐜', description: '驱虫防虫' },
+      { name: 'flowering', icon: '🌺', description: '开花植物，观赏价值高' },
+      { name: 'fast-growing', icon: '🚀', description: '生长迅速，见效快' },
+      { name: 'drought-tolerant', icon: '🏜️', description: '耐旱能力强' },
+      { name: 'low-maintenance', icon: '⚡', description: '维护成本低' },
+      { name: 'statement-plant', icon: '👑', description: '大型植物，可作为焦点' },
+      { name: 'hanging-friendly', icon: '🎪', description: '适合悬挂种植' },
+      { name: 'climbing', icon: '🧗', description: '需要攀爬支撑' },
+      { name: 'water-efficient', icon: '💧💰', description: '省水环保' }
+    ];
+
+    for (const benefit of plantBenefits) {
+      const existing = await prisma.plantBenefit.findUnique({
+        where: { name: benefit.name }
+      });
+
+      if (!existing) {
+        await prisma.plantBenefit.create({
+          data: benefit
+        });
+        console.log(`  ✅ 创建植物功效: ${benefit.name}`);
+      }
+    }
+
+    // 导入植物知识分类
+    console.log('📚 导入知识分类...');
+    const knowledgeCategories = [
+      { name: '养护指南', icon: '📖', description: '日常养护和照料方法' },
+      { name: '病害防治', icon: '🚨', description: '常见疾病和害虫防治' },
+      { name: '繁殖技巧', icon: '🌱', description: '植物繁殖和育苗方法' },
+      { name: '季节养护', icon: '🍂', description: '四季养护要点和注意事项' },
+      { name: '植物搭配', icon: '🎨', description: '植物搭配和组合建议' },
+      { name: '环境优化', icon: '🌍', description: '优化植物生长环境' },
+      { name: '营养管理', icon: '🥗', description: '施肥和营养管理' },
+      { name: '容器选择', icon: '🪴', description: '花盆和容器选择建议' }
+    ];
+
+    for (const category of knowledgeCategories) {
+      const existing = await prisma.knowledgeCategory.findUnique({
+        where: { name: category.name }
+      });
+
+      if (!existing) {
+        await prisma.knowledgeCategory.create({
+          data: category
+        });
+        console.log(`  ✅ 创建知识分类: ${category.name}`);
+      }
+    }
+
+    // 导入用户偏好
+    console.log('🎯 导入用户偏好...');
+    const userPreferences = [
+      { name: '观叶爱好者', icon: '🌿', description: '喜欢观叶植物，注重叶片形态和颜色' },
+      { name: '开花追求者', icon: '🌸', description: '喜欢开花植物，期待花朵绽放' },
+      { name: '香草收集者', icon: '🌱', description: '喜欢香草植物，注重香气和实用性' },
+      { name: '新手入门', icon: '👶', description: '刚开始种植，需要低维护植物' },
+      { name: '园艺专家', icon: '👨‍🌾', description: '有种植经验，喜欢挑战高难度植物' },
+      { name: '空间利用', icon: '📐', description: '注重空间利用，喜欢垂直种植' },
+      { name: '宠物家庭', icon: '🐶', description: '家里有宠物，选择无毒植物' },
+      { name: '儿童教育', icon: '👧', description: '用于儿童教育，选择有趣易种植的植物' }
+    ];
+
+    for (const preference of userPreferences) {
+      const existing = await prisma.userPreference.findUnique({
+        where: { name: preference.name }
+      });
+
+      if (!existing) {
+        await prisma.userPreference.create({
+          data: preference
+        });
+        console.log(`  ✅ 创建用户偏好: ${preference.name}`);
+      }
+    }
+
+    // 导入项目模板
+    console.log('📁 导入项目模板...');
+    const projectTemplates = [
+      {
+        name: '新手入门花园',
+        description: '适合新手的第一批植物组合',
+        difficulty: 1,
+        estimatedTime: 2,
+        budget: 200,
+        plants: ['绿萝', '吊兰', '仙人掌'],
+        tips: '选择容易养护的植物，建立养护习惯'
+      },
+      {
+        name: '香草厨房花园',
+        description: '适合厨房的香草植物组合',
+        difficulty: 2,
+        estimatedTime: 3,
+        budget: 300,
+        plants: ['薄荷', '罗勒', '迷迭香'],
+        tips: '放在阳光充足的窗台，方便采摘使用'
+      },
+      {
+        name: '观赏花卉花园',
+        description: '美观的花卉植物组合',
+        difficulty: 3,
+        estimatedTime: 4,
+        budget: 500,
+        plants: ['茉莉花', '杜鹃花', '向日葵'],
+        tips: '需要充足的阳光和定期的养护'
+      },
+      {
+        name: '多肉植物组合',
+        description: '低维护的多肉植物组合',
+        difficulty: 1,
+        estimatedTime: 2,
+        budget: 150,
+        plants: ['仙人掌', '芦荟', '多肉组合'],
+        tips: '排水良好，避免过度浇水'
+      },
+      {
+        name: '室内空气净化',
+        description: '净化空气的室内植物组合',
+        difficulty: 1,
+        estimatedTime: 2,
+        budget: 250,
+        plants: ['绿萝', '虎皮兰', '吊兰'],
+        tips: '适合室内环境，注意光照和通风'
+      }
+    ];
+
+    for (const template of projectTemplates) {
+      const existing = await prisma.projectTemplate.findUnique({
+        where: { name: template.name }
+      });
+
+      if (!existing) {
+        await prisma.projectTemplate.create({
+          data: {
+            name: template.name,
+            description: template.description,
+            difficulty: template.difficulty,
+            estimatedTime: template.estimatedTime,
+            budget: template.budget,
+            plants: JSON.stringify(template.plants),
+            tips: template.tips
+          }
+        });
+        console.log(`  ✅ 创建项目模板: ${template.name}`);
+      }
+    }
+
+    console.log('🎉 环境数据导入完成！');
+    console.log(`📊 总计导入阳台类型: ${balconyTypes.length} 种`);
+    console.log(`🌿 总计导入植物类别: ${plantCategories.length} 种`);
+    console.log(`🔄 总计导入养护活动: ${activityTypes.length} 种`);
+    console.log(`☀️ 总计导入光照条件: ${lightConditions.length} 种`);
+    console.log(`💧 总计导入浇水频率: ${wateringFrequencies.length} 种`);
+    console.log(`✨ 总计导入植物功效: ${plantBenefits.length} 种`);
+    console.log(`📚 总计导入知识分类: ${knowledgeCategories.length} 种`);
+    console.log(`🎯 总计导入用户偏好: ${userPreferences.length} 种`);
+    console.log(`📁 总计导入项目模板: ${projectTemplates.length} 种`);
+
+  } catch (error) {
+    console.error('❌ 环境数据导入失败:', error);
+    throw error;
+  }
 }
 
 main()
   .catch((e) => {
-    console.error('初始化环境数据时出错:', e);
+    console.error('❌ 环境数据初始化失败:', e);
     process.exit(1);
   })
   .finally(async () => {

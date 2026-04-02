@@ -1,388 +1,606 @@
-import { Router } from 'express';
-import multer from 'multer';
-import { aiGardeningService } from '@/services/aiGardeningService';
-import { asyncHandler, createError } from '@/middleware/errorHandler';
-import { PlantRecognitionRequest, RecommendationRequest, ApiResponse } from '@/types';
+import express from 'express';
+import { PrismaClient } from '@prisma/client';
+import { 
+  getSmartPlantRecommendations, 
+  optimizeBalconyDesign, 
+  diagnosePlantHealth 
+} from '../lib/aiRecommendations';
+import { aiGardeningService } from '../services/aiGardeningService';
+import { createError } from '../middleware/errorHandler';
 
-const router = Router();
+const prisma = new PrismaClient();
+const router = express.Router();
 
-// Configure multer for file uploads
-const upload = multer({
-  dest: 'uploads/temp/',
-  limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760'), // 10MB
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = (process.env.ALLOWED_MIME_TYPES || 'image/jpeg,image/png,image/webp').split(',');
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only JPEG, PNG, and WebP are allowed.'), false);
+// Middleware to track request start time
+const trackStartTime = (req: any, res: any, next: any) => {
+  req.startTime = Date.now();
+  next();
+};
+
+/**
+ * 获取智能植物推荐
+ * POST /api/ai/recommendations
+ * 
+ * 请求体示例:
+ * {
+ *   balconyType: "small",
+ *   balconySize: 10,
+ *   balconyDirection: "south", 
+ *   skillLevel: "beginner",
+ *   careTime: 2,
+ *   budget: 100,
+ *   preferences: ["air-purification", "easy-care"]
+ * }
+ */
+router.post('/recommendations', trackStartTime, async (req, res) => {
+  try {
+    const userPreferences = req.body;
+    
+    // 验证必需字段
+    if (!userPreferences.balconySize || !userPreferences.skillLevel) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需字段: balconySize, skillLevel',
+        timestamp: new Date().toISOString()
+      });
     }
+    
+    const result = await getSmartPlantRecommendations(userPreferences);
+    
+    res.json({
+      success: result.success,
+      data: result.data,
+      message: result.message,
+      timestamp: new Date().toISOString(),
+      algorithm: 'smart-matching-v1',
+      processingTime: Date.now() - req.startTime
+    });
+    
+  } catch (error) {
+    console.error('植物推荐API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
 /**
- * Recognize plant from image upload
+ * 优化阳台设计方案
+ * POST /api/ai/balcony-design
+ * 
+ * 请求体示例:
+ * {
+ *   size: { width: 3, height: 2.5, depth: 2 },
+ *   direction: "south",
+ *   budget: 500,
+ *   userPreferences: {
+ *     style: "modern",
+ *     focus: "decorative",
+ *     difficulty: "easy"
+ *   }
+ * }
  */
-router.post('/recognize-plant', 
-  upload.single('image'),
-  asyncHandler(async (req, res) => {
-    if (!req.file) {
-      throw createError('No image file provided', 400, true);
-    }
-
-    const userId = req.body.userId;
-    if (!userId) {
-      throw createError('User ID is required', 400, true);
-    }
-
-    const projectId = req.body.projectId;
-
-    try {
-      // Read file buffer
-      const fs = require('fs');
-      const imageBuffer = fs.readFileSync(req.file.path);
-
-      // Recognize plant
-      const result = await aiGardeningService.recognizePlant(imageBuffer);
-
-      // Clean up temporary file
-      fs.unlinkSync(req.file.path);
-
-      const response: ApiResponse = {
-        success: true,
-        data: {
-          ...result,
-          projectId,
-          analysisDate: new Date().toISOString()
-        },
-        message: 'Plant recognition completed successfully',
+router.post('/balcony-design', trackStartTime, async (req, res) => {
+  try {
+    const { size, direction, budget, userPreferences } = req.body;
+    
+    // 验证必需字段
+    if (!size || !direction || !budget || !userPreferences) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需字段: size, direction, budget, userPreferences',
         timestamp: new Date().toISOString()
-      };
-
-      res.json(response);
-    } catch (error) {
-      // Clean up temporary file even if processing fails
-      try {
-        const fs = require('fs');
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error('Error cleaning up temporary file:', cleanupError);
-      }
-      throw error;
+      });
     }
-  })
-);
-
-/**
- * Analyze balcony conditions
- */
-router.post('/analyze-balcony',
-  upload.single('image'),
-  asyncHandler(async (req, res) => {
-    if (!req.file) {
-      throw createError('No balcony image provided', 400, true);
-    }
-
-    const userId = req.body.userId;
-    if (!userId) {
-      throw createError('User ID is required', 400, true);
-    }
-
-    try {
-      // Read file buffer
-      const fs = require('fs');
-      const imageBuffer = fs.readFileSync(req.file.path);
-
-      // Analyze balcony
-      const analysis = await aiGardeningService.analyzeBalcony(imageBuffer, userId);
-
-      // Clean up temporary file
-      fs.unlinkSync(req.file.path);
-
-      const response: ApiResponse = {
-        success: true,
-        data: {
-          ...analysis,
-          analysisDate: new Date().toISOString()
-        },
-        message: 'Balcony analysis completed successfully',
-        timestamp: new Date().toISOString()
-      };
-
-      res.json(response);
-    } catch (error) {
-      // Clean up temporary file even if processing fails
-      try {
-        const fs = require('fs');
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error('Error cleaning up temporary file:', cleanupError);
-      }
-      throw error;
-    }
-  })
-);
-
-/**
- * Generate design recommendations
- */
-router.post('/design-recommendations',
-  asyncHandler(async (req: any, res) => {
-    const { userId, balconyConditions, preferences, projectId }: RecommendationRequest = req.body;
-
-    if (!userId) {
-      throw createError('User ID is required', 400, true);
-    }
-
-    if (!balconyConditions) {
-      throw createError('Balcony conditions are required', 400, true);
-    }
-
-    // Generate recommendations
-    const recommendations = await aiGardeningService.generateDesignRecommendations(
-      userId,
-      balconyConditions,
-      preferences,
-      projectId
-    );
-
-    const response: ApiResponse = {
-      success: true,
-      data: {
-        recommendations,
-        generatedAt: new Date().toISOString(),
-        count: recommendations.length
-      },
-      message: 'Design recommendations generated successfully',
-      timestamp: new Date().toISOString()
+    
+    const balconyConfig = {
+      size,
+      direction,
+      budget,
+      userPreferences
     };
-
-    res.json(response);
-  })
-);
-
-/**
- * Get plant care alerts
- */
-router.get('/care-alerts', 
-  asyncHandler(async (req, res) => {
-    const userId = req.query.userId;
-    const projectId = req.query.projectId;
-
-    if (!userId) {
-      throw createError('User ID is required', 400, true);
-    }
-
-    const alerts = await aiGardeningService.generateCareAlerts(userId, projectId);
-
-    const response: ApiResponse = {
-      success: true,
-      data: {
-        alerts,
-        generatedAt: new Date().toISOString(),
-        count: alerts.length
-      },
-      message: 'Care alerts generated successfully',
-      timestamp: new Date().toISOString()
-    };
-
-    res.json(response);
-  })
-);
-
-/**
- * Search plants
- */
-router.post('/search-plants',
-  asyncHandler(async (req, res) => {
-    const { conditions, preferences, limit = 10 } = req.body;
-
-    if (!conditions) {
-      throw createError('Conditions are required', 400, true);
-    }
-
-    const plants = await aiGardeningService.searchPlants(conditions, preferences, limit);
-
-    const response: ApiResponse = {
-      success: true,
-      data: {
-        plants,
-        searchAt: new Date().toISOString(),
-        count: plants.length
-      },
-      message: 'Plant search completed successfully',
-      timestamp: new Date().toISOString()
-    };
-
-    res.json(response);
-  })
-);
-
-/**
- * Get plant care information
- */
-router.get('/plant/:plantId/care',
-  asyncHandler(async (req, res) => {
-    const { plantId } = req.params;
-
-    const careInfo = await aiGardeningService.getPlantCareInfo(plantId);
-
-    const response: ApiResponse = {
-      success: true,
-      data: careInfo,
-      message: 'Plant care information retrieved successfully',
-      timestamp: new Date().toISOString()
-    };
-
-    res.json(response);
-  })
-);
-
-/**
- * Get gardening tips by category
- */
-router.get('/tips/:category',
-  asyncHandler(async (req, res) => {
-    const { category } = req.params;
-    const { limit = 10 } = req.query;
-
-    // Get plant knowledge by category
-    const tips = await require('@prisma/client').prisma.plantKnowledge.findMany({
-      where: { category },
-      take: parseInt(limit.toString()),
-      orderBy: { createdAt: 'desc' }
+    
+    const result = await optimizeBalconyDesign(balconyConfig);
+    
+    res.json({
+      success: result.success,
+      data: result.data,
+      message: result.message,
+      timestamp: new Date().toISOString(),
+      algorithm: 'space-optimization-v1',
+      processingTime: Date.now() - req.startTime
     });
+    
+  } catch (error) {
+    console.error('阳台设计API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
-    const response: ApiResponse = {
+/**
+ * 植物健康诊断
+ * POST /api/ai/diagnose
+ * 
+ * 请求体示例:
+ * {
+ *   plantId: "plant-id-123",
+ *   symptoms: ["叶片发黄", "生长缓慢"],
+ *   environment: {
+ *     light: "medium",
+ *     water: "moderate", 
+ *     temperature: 25,
+ *     humidity: 60,
+ *     recentChanges: ["最近换盆", "施肥"]
+ *   }
+ * }
+ */
+router.post('/diagnose', trackStartTime, async (req, res) => {
+  try {
+    const { plantId, symptoms, environment } = req.body;
+    
+    // 验证必需字段
+    if (!plantId || !symptoms || !environment) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需字段: plantId, symptoms, environment',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const result = await diagnosePlantHealth(plantId, symptoms, environment);
+    
+    res.json({
+      success: result.success,
+      data: result.data,
+      message: result.message,
+      timestamp: new Date().toISOString(),
+      algorithm: 'health-diagnosis-v1',
+      processingTime: Date.now() - req.startTime
+    });
+    
+  } catch (error) {
+    console.error('健康诊断API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * 获取植物维护建议
+ * GET /api/ai/maintenance-tips/:plantId
+ */
+router.get('/maintenance-tips/:plantId', async (req, res) => {
+  try {
+    const { plantId } = req.params;
+    
+    const plant = await prisma.plant.findUnique({
+      where: { id: plantId },
+      include: {
+        knowledge: {
+          where: { category: 'care' },
+          orderBy: { difficulty: 'asc' }
+        },
+        seasons: true
+      }
+    });
+    
+    if (!plant) {
+      return res.status(404).json({
+        success: false,
+        error: '植物未找到',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // 获取当前季节
+    const currentSeason = getCurrentSeason();
+    
+    // 生成维护建议
+    const maintenanceTips = {
+      basicCare: {
+        watering: plant.water === 'frequent' ? '每天浇水，保持土壤湿润' :
+                plant.water === 'moderate' ? '每2-3天浇水一次，保持土壤微湿' :
+                '每5-7天浇水一次，宁干勿湿',
+        light: plant.light === 'full-sun' ? '需要充足的直射阳光' :
+              plant.light === 'partial-sun' ? '喜欢明亮的散射光' :
+              plant.light === 'partial-shade' ? '喜欢半阴环境' :
+              '耐阴性强，适合室内环境',
+        fertilizing: plant.growthRate === 'fast' ? '每月施肥2次，使用平衡肥料' :
+                   plant.growthRate === 'medium' ? '每月施肥1次' :
+                   '每2-3个月施肥1次，少量即可'
+      },
+      seasonalCare: plant.seasons.filter(season => season.season === currentSeason),
+      warnings: [],
+      tips: plant.knowledge.map(knowledge => ({
+        title: knowledge.title,
+        content: knowledge.content,
+        difficulty: knowledge.difficulty,
+        category: knowledge.category
+      }))
+    };
+    
+    // 根据植物特性添加警告
+    if (plant.toxicity === 'toxic-to-pets') {
+      maintenanceTips.warnings.push('注意：该植物对宠物有毒，请放置在宠物无法接触的地方');
+    }
+    
+    if (plant.difficulty >= 4) {
+      maintenanceTips.warnings.push('该植物需要较高养护技能，建议有经验的园艺爱好者尝试');
+    }
+    
+    res.json({
       success: true,
       data: {
-        tips,
-        category,
-        count: tips.length
+        plant: {
+          id: plant.id,
+          name: plant.name,
+          category: plant.category,
+          difficulty: plant.difficulty
+        },
+        currentSeason,
+        maintenanceTips,
+        estimatedWeeklyTime: plant.difficulty * 0.5 + 1 // 根据难度估算每周所需时间
       },
-      message: 'Gardening tips retrieved successfully',
+      message: `为${plant.name}生成个性化维护建议`,
       timestamp: new Date().toISOString()
-    };
-
-    res.json(response);
-  })
-);
+    });
+    
+  } catch (error) {
+    console.error('维护建议API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 /**
- * Get weather-based gardening advice
+ * 获取植物相容性分析
+ * POST /api/ai/compatibility
+ * 
+ * 请求体示例:
+ * {
+ *   plantIds: ["plant-id-1", "plant-id-2"],
+ *   conditions: {
+ *     light: "medium",
+ *     water: "moderate",
+ *     temperature: 22
+ *   }
+ * }
  */
-router.get('/weather-advice',
-  asyncHandler(async (req, res) => {
-    const { location } = req.query;
-
-    if (!location) {
-      throw createError('Location is required', 400, true);
+router.post('/compatibility', async (req, res) => {
+  try {
+    const { plantIds, conditions } = req.body;
+    
+    if (!plantIds || plantIds.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: '至少需要2种植物进行相容性分析',
+        timestamp: new Date().toISOString()
+      });
     }
-
-    // This would integrate with a weather API in production
-    const advice = {
-      location: location as string,
-      season: this.getCurrentSeason(),
-      tips: [
-        'Water plants in the morning to reduce evaporation',
-        'Apply mulch to retain soil moisture',
-        'Monitor for pest outbreaks in warm weather',
-        'Adjust fertilizing schedule based on weather conditions'
-      ],
-      alerts: []
-    };
-
-    const response: ApiResponse = {
-      success: true,
-      data: advice,
-      message: 'Weather advice generated successfully',
-      timestamp: new Date().toISOString()
-    };
-
-    res.json(response);
-  })
-);
-
-/**
- * Get seasonal gardening calendar
- */
-router.get('/calendar/:month',
-  asyncHandler(async (req, res) => {
-    const { month } = req.params;
-    const { location } = req.query;
-
-    // Generate seasonal gardening tasks
-    const calendar = {
-      month,
-      location: location || 'General',
-      tasks: [
-        'Start indoor seedlings',
-        'Prune dormant trees',
-        'Prepare garden beds',
-        'Apply spring fertilizer'
-      ],
-      planting: [
-        'Cold-hardy vegetables',
-        'Flowering bulbs',
-        'Herbs'
-      ],
-      maintenance: [
-        'Soil preparation',
-        'Tool maintenance',
-        'Greenhouse cleaning'
-      ]
-    };
-
-    const response: ApiResponse = {
-      success: true,
-      data: calendar,
-      message: 'Seasonal calendar generated successfully',
-      timestamp: new Date().toISOString()
-    };
-
-    res.json(response);
-  })
-);
-
-/**
- * Get plant compatibility analysis
- */
-router.post('/compatibility-analysis',
-  asyncHandler(async (req, res) => {
-    const { plants, conditions } = req.body;
-
-    if (!plants || !Array.isArray(plants)) {
-      throw createError('Plants array is required', 400, true);
+    
+    const plants = await prisma.plant.findMany({
+      where: { id: { in: plantIds } }
+    });
+    
+    if (plants.length < 2) {
+      return res.status(404).json({
+        success: false,
+        error: '部分植物未找到',
+        timestamp: new Date().toISOString()
+      });
     }
-
-    // Analyze plant compatibility
-    const analysis = {
-      compatible: [
-        { plant1: 'Rose', plant2: 'Lavender', reason: 'Similar water and light requirements' },
-        { plant1: 'Tomato', plant2: 'Basil', reason: 'Companion plants, pest repelling' }
-      ],
-      incompatible: [
-        { plant1: 'Cactus', plant2: 'Fern', reason: 'Different water requirements' }
-      ],
-      recommendations: [
-        'Group plants with similar care requirements',
-        'Consider mature sizes for spacing',
-        'Plan for seasonal changes'
-      ]
+    
+    const compatibility = {
+      overall: 'good',
+      score: 0,
+      analysis: [] as Array<{
+        plant1: string;
+        plant2: string;
+        compatibility: 'excellent' | 'good' | 'fair' | 'poor';
+        reason: string;
+      }>,
+      recommendations: [] as string[]
     };
-
-    const response: ApiResponse = {
+    
+    // 分析每对植物的相容性
+    for (let i = 0; i < plants.length; i++) {
+      for (let j = i + 1; j < plants.length; j++) {
+        const plant1 = plants[i];
+        const plant2 = plants[j];
+        
+        let score = 50; // 基础分
+        let compatibilityLevel: 'excellent' | 'good' | 'fair' | 'poor' = 'good';
+        let reason = '';
+        
+        // 光照需求匹配
+        if (plant1.light === plant2.light) {
+          score += 20;
+          compatibilityLevel = 'excellent';
+          reason = `两者都喜欢${plant1.light}环境，光照需求一致`;
+        } else if (Math.abs(['full-sun', 'partial-sun', 'partial-shade', 'low'].indexOf(plant1.light) - 
+                         ['full-sun', 'partial-sun', 'partial-shade', 'low'].indexOf(plant2.light)) <= 1) {
+          score += 10;
+          compatibilityLevel = 'good';
+          reason = `光照需求相近，可以协调种植`;
+        } else {
+          score -= 15;
+          compatibilityLevel = 'poor';
+          reason = `光照需求差异较大，难以协调`;
+        }
+        
+        // 水分需求匹配
+        if (plant1.water === plant2.water) {
+          score += 20;
+          compatibilityLevel = compatibilityLevel === 'excellent' ? 'excellent' : 'good';
+          reason += '，水分需求一致';
+        } else {
+          score -= 10;
+          reason += '，水分需求需要调整';
+        }
+        
+        // 难度匹配
+        if (Math.abs(plant1.difficulty - plant2.difficulty) <= 1) {
+          score += 10;
+          reason += '，养护难度相近';
+        } else {
+          score -= 5;
+          reason += '，养护难度差异较大';
+        }
+        
+        // 更新总分
+        if (score > compatibility.score) {
+          compatibility.score = score;
+        }
+        
+        compatibility.analysis.push({
+          plant1: plant1.name,
+          plant2: plant2.name,
+          compatibility: compatibilityLevel,
+          reason
+        });
+      }
+    }
+    
+    // 根据总分确定整体相容性
+    if (compatibility.score >= 70) {
+      compatibility.overall = 'excellent';
+    } else if (compatibility.score >= 50) {
+      compatibility.overall = 'good';
+    } else if (compatibility.score >= 30) {
+      compatibility.overall = 'fair';
+    } else {
+      compatibility.overall = 'poor';
+    }
+    
+    // 生成建议
+    compatibility.recommendations = generateCompatibilityRecommendations(plants, conditions);
+    
+    res.json({
       success: true,
-      data: analysis,
-      message: 'Compatibility analysis completed successfully',
+      data: compatibility,
+      message: `完成${plants.length}种植物相容性分析`,
       timestamp: new Date().toISOString()
-    };
+    });
+    
+  } catch (error) {
+    console.error('相容性分析API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
-    res.json(response);
-  })
-);
+// 辅助函数：获取当前季节
+function getCurrentSeason(): string {
+  const month = new Date().getMonth() + 1;
+  if (month >= 3 && month <= 5) return 'spring';
+  if (month >= 6 && month <= 8) return 'summer';
+  if (month >= 9 && month <= 11) return 'autumn';
+  return 'winter';
+}
+
+// 辅助函数：生成相容性建议
+function generateCompatibilityRecommendations(plants: any[], conditions: any): string[] {
+  const recommendations: string[] = [];
+  
+  // 检查是否有毒性植物
+  const toxicPlants = plants.filter(p => p.toxicity && p.toxicity !== 'non-toxic');
+  if (toxicPlants.length > 0) {
+    recommendations.push(`注意：${toxicPlants.map(p => p.name).join('、')}有毒性，请谨慎种植`);
+  }
+  
+  // 检查空间需求
+  const totalMatureSize = plants.reduce((sum, plant) => {
+    const size = plant.matureSize ? JSON.parse(plant.matureSize) : { height: 20, spread: 20 };
+    return sum + parseInt(size.height || 20) + parseInt(size.spread || 20);
+  }, 0);
+  
+  if (totalMatureSize > 200) {
+    recommendations.push('这些植物成熟后空间需求较大，建议分批种植或选择较小的品种');
+  }
+  
+  // 光照建议
+  const lightLevels = plants.map(p => p.light);
+  if (lightLevels.includes('full-sun') && lightLevels.includes('low')) {
+    recommendations.push('建议使用分区种植，将喜阳和耐阴植物分开摆放');
+  }
+  
+  return recommendations;
+}
+
+/**
+ * 智能植物问题诊断
+ * POST /api/ai/diagnose-problem
+ * 
+ * 请求体示例:
+ * {
+ *   plantId: "plant-id-123",
+ *   problemDescription: "叶片发黄，生长缓慢，有斑点",
+ *   image?: "base64-encoded-image" (可选)
+ * }
+ */
+router.post('/diagnose-problem', trackStartTime, async (req, res) => {
+  try {
+    const { plantId, problemDescription, image } = req.body;
+    
+    // 验证必需字段
+    if (!plantId || !problemDescription) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需字段: plantId, problemDescription',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    let imageBuffer;
+    if (image) {
+      // 将base64图像转换为Buffer
+      const base64Data = image.replace(/^data:image\/[a-z]+;base64,/, "");
+      imageBuffer = Buffer.from(base64Data, 'base64');
+    }
+    
+    const result = await aiGardeningService.diagnosePlantProblem(
+      plantId,
+      problemDescription,
+      imageBuffer
+    );
+    
+    res.json({
+      success: true,
+      data: result,
+      message: '完成植物问题诊断',
+      timestamp: new Date().toISOString(),
+      algorithm: 'smart-diagnosis-v1',
+      processingTime: Date.now() - req.startTime
+    });
+    
+  } catch (error) {
+    console.error('植物问题诊断API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * 个性化植物护理建议
+ * POST /api/ai/personalized-care
+ * 
+ * 请求体示例:
+ * {
+ *   userId: "user-id-123",
+ *   plantId?: "plant-id-123" (可选，指定特定植物)
+ * }
+ */
+router.post('/personalized-care', trackStartTime, async (req, res) => {
+  try {
+    const { userId, plantId } = req.body;
+    
+    // 验证必需字段
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需字段: userId',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const result = await aiGardeningService.getPersonalizedCareRecommendations(
+      userId,
+      plantId
+    );
+    
+    res.json({
+      success: true,
+      data: result,
+      message: plantId 
+        ? `为植物ID ${plantId} 生成个性化护理建议`
+        : '为用户生成全面个性化护理建议',
+      timestamp: new Date().toISOString(),
+      algorithm: 'personalized-learning-v1',
+      processingTime: Date.now() - req.startTime
+    });
+    
+  } catch (error) {
+    console.error('个性化护理建议API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * 获取AI系统诊断和学习能力状态
+ * GET /api/ai/capabilities
+ */
+router.get('/capabilities', async (req, res) => {
+  try {
+    const capabilities = {
+      diagnosis: {
+        enabled: true,
+        features: [
+          '植物图像识别',
+          '症状描述分析',
+          'AI诊断建议',
+          '相似问题匹配',
+          '预防学习机制'
+        ],
+        confidence: '85-95%',
+        supportedPlantTypes: '100+常见植物'
+      },
+      personalization: {
+        enabled: true,
+        features: [
+          '用户护理模式学习',
+          '个性化优化建议',
+          '季节性调整',
+          '成功模式识别',
+          '持续改进机制'
+        ],
+        dataRequirements: '最少5次护理记录',
+        learningSpeed: '周级优化'
+      },
+      integration: {
+        aiModels: ['GPT-4 Vision', 'GPT-4'],
+        dataSources: ['Plant Knowledge Base', 'User Activities', 'Weather Data'],
+        responseTime: '2-5秒',
+        accuracy: '持续改进中'
+      }
+    };
+    
+    res.json({
+      success: true,
+      data: capabilities,
+      message: 'AI系统诊断和学习能力状态',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('能力状态API错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 export default router;

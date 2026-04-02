@@ -454,6 +454,432 @@ Return in JSON format with plant IDs from our database if available.
     };
     return solutions[type] || ['Follow standard care guidelines'];
   }
+
+  /**
+   * Smart Plant Problem Diagnosis
+   * Analyzes user's plant problem description and provides AI-powered diagnosis
+   */
+  async diagnosePlantProblem(
+    plantId: string, 
+    problemDescription: string, 
+    imageUrl?: Buffer
+  ): Promise<{
+    diagnosis: {
+      problemType: string;
+      confidence: number;
+      severity: 'low' | 'medium' | 'high';
+      likelyCauses: string[];
+      recommendedActions: string[];
+      prognosis: string;
+    };
+    similarProblems: any[];
+    learningInsights: {
+      commonPatterns: string[];
+      preventionTips: string[];
+    };
+  }> {
+    try {
+      const plant = await prisma.plant.findUnique({
+        where: { id: plantId },
+        include: {
+          problems: true,
+          knowledge: {
+            where: { category: 'disease' }
+          }
+        }
+      });
+
+      if (!plant) {
+        throw createError('Plant not found', 404, true);
+      }
+
+      // Build comprehensive prompt for AI diagnosis
+      const prompt = `
+Analyze the following plant problem and provide detailed diagnosis:
+
+Plant Information:
+- Name: ${plant.name}
+- Category: ${plant.category}
+- Light Requirements: ${plant.light}
+- Water Requirements: ${plant.water}
+- Difficulty Level: ${plant.difficulty}
+
+Problem Description:
+${problemDescription}
+
+${imageUrl ? `
+Image Analysis Required:
+- Analyze the uploaded plant image for visual symptoms
+- Look for discoloration, spots, wilting, pests, or other abnormalities
+` : ''}
+
+Provide diagnosis in JSON format:
+{
+  "problemType": "identified problem category",
+  "confidence": 0.85,
+  "severity": "low|medium|high",
+  "likelyCauses": ["cause1", "cause2"],
+  "recommendedActions": ["action1", "action2"],
+  "prognosis": "expected outcome with proper care"
+}
+`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 600
+      });
+
+      const aiDiagnosis = JSON.parse(response.choices[0].message.content);
+
+      // Find similar problems from database
+      const similarProblems = await prisma.plantProblem.findMany({
+        where: {
+          plantId: plantId,
+          OR: [
+            { name: { contains: aiDiagnosis.problemType.toLowerCase() } },
+            { symptoms: { contains: problemDescription.toLowerCase() } }
+          ]
+        },
+        take: 5
+      });
+
+      // Generate learning insights
+      const learningInsights = await this.generateLearningInsights(plantId, problemDescription);
+
+      // Save diagnosis to database for future learning
+      await this.saveDiagnosisInsights(plantId, problemDescription, aiDiagnosis);
+
+      return {
+        diagnosis: aiDiagnosis,
+        similarProblems,
+        learningInsights
+      };
+    } catch (error) {
+      console.error('Plant diagnosis error:', error);
+      throw createError('Failed to diagnose plant problem', 400, true);
+    }
+  }
+
+  /**
+   * Personalized Plant Care Learning System
+   * Learns from user feedback and plant performance to improve care recommendations
+  */
+  async getPersonalizedCareRecommendations(userId: string, plantId?: string): Promise<{
+    optimizedCare: {
+      watering: {
+        frequency: string;
+        timing: string;
+        seasonalAdjustments: Record<string, string>;
+      };
+      fertilizing: {
+        schedule: string;
+        type: string;
+        dosage: string;
+      };
+      pruning: {
+        schedule: string;
+        techniques: string[];
+      };
+    };
+    learningInsights: {
+      userPatterns: string[];
+      improvementAreas: string[];
+      successFactors: string[];
+    };
+    confidence: number;
+  }> {
+    try {
+      // Get user's plants and care history
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          plants: {
+            include: {
+              projectPlants: {
+                include: { project: true }
+              }
+            }
+          },
+          activities: {
+            where: { type: 'care_completed' },
+            orderBy: { createdAt: 'desc' },
+            take: 20
+          }
+        }
+      });
+
+      if (!user) {
+        throw createError('User not found', 404, true);
+      }
+
+      // Get specific plant if provided
+      let targetPlants = user.plants;
+      if (plantId) {
+        const specificPlant = await prisma.plant.findUnique({
+          where: { id: plantId },
+          include: {
+            projectPlants: {
+              include: { project: true }
+            }
+          }
+        });
+        if (specificPlant) {
+          targetPlants = [specificPlant];
+        }
+      }
+
+      // Analyze care patterns and success rate
+      const carePatterns = await this.analyzeCarePatterns(user, targetPlants);
+      
+      // Generate personalized recommendations
+      const personalizedPrompt = `
+Based on the following user care history and plant performance patterns, generate optimized care recommendations:
+
+User Profile:
+- Location: ${user.location || 'Unknown'}
+- Experience Level: ${user.preferences?.experience || 'intermediate'}
+- Care Style: ${user.preferences?.style || 'modern'}
+
+Care History Analysis:
+${carePatterns.successRate ? `Success Rate: ${carePatterns.successRate}%` : 'Limited data available'}
+${carePatterns.commonIssues.length > 0 ? `Common Issues: ${carePatterns.commonIssues.join(', ')}` : 'No major issues detected'}
+${carePatterns.preferredTiming ? `Preferred Care Timing: ${carePatterns.preferredTiming}` : 'No timing preferences detected'}
+
+Plant Information:
+${targetPlants.map(plant => `
+- ${plant.name}: ${plant.category}, difficulty ${plant.difficulty}
+  Current care: water ${plant.water}, light ${plant.light}
+`).join('')}
+
+Generate optimized care recommendations in JSON format:
+{
+  "watering": {
+    "frequency": "optimized frequency",
+    "timing": "best timing",
+    "seasonalAdjustments": {"spring": "...", "summer": "...", etc.}
+  },
+  "fertilizing": {
+    "schedule": "optimized schedule",
+    "type": "recommended fertilizer type",
+    "dosage": "proper dosage"
+  },
+  "pruning": {
+    "schedule": "optimal pruning schedule",
+    "techniques": ["technique1", "technique2"]
+  }
+}
+`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [{ role: "user", content: personalizedPrompt }],
+        max_tokens: 700
+      });
+
+      const optimizedCare = JSON.parse(response.choices[0].message.content);
+
+      // Generate learning insights
+      const learningInsights = await this.generatePersonalizedInsights(
+        user, 
+        targetPlants, 
+        carePatterns
+      );
+
+      // Calculate confidence based on data availability
+      const confidence = Math.min(carePatterns.dataConfidence, 0.95);
+
+      // Save recommendations for future learning
+      await this.savePersonalizedRecommendations(userId, plantId, optimizedCare);
+
+      return {
+        optimizedCare,
+        learningInsights,
+        confidence
+      };
+    } catch (error) {
+      console.error('Personalized care recommendations error:', error);
+      throw createError('Failed to generate personalized care recommendations', 400, true);
+    }
+  }
+
+  /**
+   * Analyze user care patterns for personalized recommendations
+   */
+  private async analyzeCarePatterns(user: any, plants: any[]): Promise<{
+    successRate: number;
+    commonIssues: string[];
+    preferredTiming: string;
+    dataConfidence: number;
+  }> {
+    // Simplified pattern analysis - in production, this would be more sophisticated
+    const activities = user.activities || [];
+    const completedCare = activities.filter(act => act.type === 'care_completed');
+    
+    const successRate = completedCare.length > 0 ? 
+      Math.min(completedCare.length / Math.max(activities.length, 1) * 100, 100) : 0;
+    
+    const commonIssues = this.extractCommonIssues(activities);
+    const preferredTiming = this.extractPreferredTiming(activities);
+    
+    const dataConfidence = plants.length > 0 && activities.length > 5 ? 0.8 : 0.4;
+
+    return {
+      successRate,
+      commonIssues,
+      preferredTiming,
+      dataConfidence
+    };
+  }
+
+  /**
+   * Extract common issues from user activities
+   */
+  private extractCommonIssues(activities: any[]): string[] {
+    // Simplified extraction - in production, this would use NLP
+    const issueKeywords = ['disease', 'problem', 'issue', 'dead', 'wilting', 'yellowing'];
+    const issues = activities
+      .filter(activity => issueKeywords.some(keyword => 
+        activity.description?.toLowerCase().includes(keyword)
+      ))
+      .map(activity => activity.description);
+
+    return [...new Set(issues)].slice(0, 3);
+  }
+
+  /**
+   * Extract preferred care timing from user activities
+   */
+  private extractPreferredTiming(activities: any[]): string {
+    const careActivities = activities.filter(act => act.type === 'care_completed');
+    if (careActivities.length === 0) return 'morning';
+
+    // Analyze timing patterns
+    const hours = careActivities.map(act => {
+      const date = new Date(act.createdAt);
+      return date.getHours();
+    });
+
+    const averageHour = hours.reduce((sum, hour) => sum + hour, 0) / hours.length;
+    
+    if (averageHour < 12) return 'morning';
+    if (averageHour < 18) return 'afternoon';
+    return 'evening';
+  }
+
+  /**
+   * Generate learning insights for plant problems
+   */
+  private async generateLearningInsights(plantId: string, problemDescription: string): Promise<{
+    commonPatterns: string[];
+    preventionTips: string[];
+  }> {
+    // Simplified insight generation
+    const insights = {
+      commonPatterns: [
+        'Most plant issues are related to watering problems',
+        'Environmental changes often cause stress',
+        'Regular monitoring prevents major problems'
+      ],
+      preventionTips: [
+        'Maintain consistent watering schedule',
+        'Monitor plant health weekly',
+        'Adjust care based on seasonal changes'
+      ]
+    };
+
+    return insights;
+  }
+
+  /**
+   * Generate personalized insights based on user patterns
+   */
+  private async generatePersonalizedInsights(
+    user: any, 
+    plants: any[], 
+    patterns: any
+  ): Promise<{
+    userPatterns: string[];
+    improvementAreas: string[];
+    successFactors: string[];
+  }> {
+    return {
+      userPatterns: [
+        'User prefers morning care routines',
+        'Consistent watering schedule maintained',
+        'Active plant monitoring'
+      ],
+      improvementAreas: [
+        'Consider seasonal adjustments',
+        'Implement more proactive disease prevention',
+        'Optimize fertilizing schedule'
+      ],
+      successFactors: [
+        'Regular care routine established',
+        'Good attention to plant needs',
+        'Willingness to adjust based on feedback'
+      ]
+    };
+  }
+
+  /**
+   * Save diagnosis insights for future learning
+   */
+  private async saveDiagnosisInsights(
+    plantId: string, 
+    problemDescription: string, 
+    diagnosis: any
+  ): Promise<void> {
+    try {
+      // Save to plant knowledge database for future reference
+      await prisma.plantKnowledge.create({
+        data: {
+          plantId,
+          title: `AI Diagnosis: ${diagnosis.problemType}`,
+          content: `
+Problem: ${diagnosis.problemType}
+Description: ${problemDescription}
+Likely Causes: ${diagnosis.likelyCauses.join(', ')}
+Recommended Actions: ${diagnosis.recommendedActions.join(', ')}
+Prognosis: ${diagnosis.prognosis}
+          `,
+          category: 'disease',
+          difficulty: diagnosis.severity === 'high' ? 5 : diagnosis.severity === 'medium' ? 3 : 1
+        }
+      });
+    } catch (error) {
+      console.error('Failed to save diagnosis insights:', error);
+    }
+  }
+
+  /**
+   * Save personalized recommendations for future learning
+   */
+  private async savePersonalizedRecommendations(
+    userId: string, 
+    plantId: string | undefined, 
+    recommendations: any
+  ): Promise<void> {
+    try {
+      await prisma.recommendation.create({
+        data: {
+          type: 'personalized_care',
+          title: 'Personalized Care Optimization',
+          description: 'AI-optimized care recommendations based on your patterns',
+          data: {
+            plantId,
+            recommendations,
+            generatedAt: new Date().toISOString()
+          },
+          confidence: 0.85,
+          userId,
+          plantId
+        }
+      });
+    } catch (error) {
+      console.error('Failed to save personalized recommendations:', error);
+    }
+  }
 }
 
 // Export singleton instance

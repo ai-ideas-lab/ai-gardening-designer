@@ -18,7 +18,7 @@ model User {
   balconyType String?
   balconySize  Float?
   balconyDirection String?
-  preferences Json?
+  preferences String?  // JSON string instead of Json
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -31,6 +31,8 @@ model User {
   purchases   Purchase[]
   comments    Comment[]
   reports     Report[]
+  posts       Post[]
+  recommendations Recommendation[]
 
   @@map("users")
 }
@@ -39,29 +41,29 @@ model Plant {
   id          String   @id @default(cuid())
   name        String
   scientificName String?
-  commonNames String[]
+  commonNames String?  // String instead of String[]
   category    String   // 'indoor', 'outdoor', 'herb', 'flower', 'vegetable'
   light       String   // 'full-sun', 'partial-sun', 'partial-shade', 'shade'
   water       String   // 'frequent', 'moderate', 'minimal'
-  temperature Json?
-  humidity    Json?
+  temperature String?  // JSON string instead of Json
+  humidity    String?  // JSON string instead of Json
   soil        String?
   growthRate  String?  // 'fast', 'medium', 'slow'
-  matureSize  Json?
+  matureSize  String?  // JSON string instead of Json
   difficulty  Int      @default(3) // 1-5 scale
   description String?
-  careTips    String[]
+  careTips    String?  // JSON string instead of String[]
   toxicity    String?  // 'non-toxic', 'toxic-to-pets', 'toxic-to-humans'
-  benefits    String[] // 'air-purification', 'easy-care', 'fragrant', etc.
+  benefits    String?  // JSON string instead of String[]
   imageUrl    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  
   // Relations
   projectPlants ProjectPlant[]
   knowledge     PlantKnowledge[]
   problems      PlantProblem[]
   seasons       PlantSeason[]
+  reminders    Reminder[]
+  recommendations Recommendation[]
 
   @@map("plants")
 }
@@ -71,8 +73,8 @@ model Project {
   name        String
   description String?
   status      String   @default("planning") // 'planning', 'in-progress', 'completed'
-  balconyJson Json     // balcony configuration data
-  designJson  Json     // design plan data
+  balconyJson String?  // JSON string instead of Json
+  designJson  String?  // JSON string instead of Json
   location    String?
   area        Float?
   budget      Float?
@@ -86,7 +88,8 @@ model Project {
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectPlants ProjectPlant[]
   activities  Activity[]
-  reports     Report[]
+  reminders   Reminder[]
+  recommendations Recommendation[]
 
   @@map("projects")
 }
@@ -96,7 +99,7 @@ model ProjectPlant {
   projectId  String
   plantId    String
   quantity   Int      @default(1)
-  position   Json     // position information in balcony
+  position   String?  // JSON string instead of Json
   notes      String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -115,7 +118,7 @@ model PlantKnowledge {
   content     String
   category    String   // 'care', 'propagation', 'disease', 'tip'
   difficulty  Int?     // 1-5 scale
-  tags        String[]
+  tags        String?  // JSON string instead of String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -130,9 +133,9 @@ model PlantProblem {
   plantId     String
   name        String
   description String
-  symptoms    String[]
-  causes      String[]
-  solutions   String[]
+  symptoms    String?  // JSON string instead of String[]
+  causes      String?  // JSON string instead of String[]
+  solutions   String?  // JSON string instead of String[]
   imageUrl    String?
   severity    Int      @default(3) // 1-5 scale
   createdAt   DateTime @default(now())
@@ -148,8 +151,8 @@ model PlantSeason {
   id          String   @id @default(cuid())
   plantId     String
   season      String   // 'spring', 'summer', 'autumn', 'winter'
-  tasks       String[]
-  careTips    String[]
+  tasks       String?  // JSON string instead of String[]
+  careTips    String?  // JSON string instead of String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -182,7 +185,7 @@ model Activity {
   type        String   // 'upload', 'plant_added', 'care_completed', 'milestone'
   title       String
   description String?
-  data        Json?
+  data        String?  // JSON string instead of Json
   projectId   String?
   userId      String
   createdAt   DateTime @default(now())
@@ -229,7 +232,6 @@ model Community {
   // Relations
   members     CommunityMembership[]
   posts       Post[]
-  comments    Comment[]
 
   @@map("communities")
 }
@@ -265,7 +267,6 @@ model Post {
   community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   comments    Comment[]
-  reports     Report[]
 
   @@map("posts")
 }
@@ -281,7 +282,6 @@ model Comment {
   // Relations
   post        Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
   author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  reports     Report[]
 
   @@map("comments")
 }
@@ -344,7 +344,7 @@ model Recommendation {
   type        String   // 'plant', 'design', 'care'
   title       String
   description String
-  data        Json?
+  data        String?  // JSON string instead of Json
   confidence  Float    // 0-1
   plantId     String?
   projectId   String?
@@ -357,4 +357,113 @@ model Recommendation {
   plant       Plant?   @relation(fields: [plantId], references: [id], onDelete: Cascade)
 
   @@map("recommendations")
+}
+
+// Environment related models
+model BalconyType {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("balcony_types")
+}
+
+model PlantCategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plant_categories")
+}
+
+model ActivityType {
+  id          String   @id @default(cuid())
+  name        String
+  icon        String
+  frequency   String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("activity_types")
+}
+
+model LightCondition {
+  id          String   @id @default(cuid())
+  level       String   @unique
+  name        String
+  description String
+  icon        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("light_conditions")
+}
+
+model WateringFrequency {
+  id          String   @id @default(cuid())
+  frequency   String   @unique
+  name        String
+  description String
+  icon        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("watering_frequencies")
+}
+
+model PlantBenefit {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  icon        String?
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plant_benefits")
+}
+
+model KnowledgeCategory {
+  id          String   @id @default(cuid())
+  name        String
+  icon        String?
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("knowledge_categories")
+}
+
+model UserPreference {
+  id          String   @id @default(cuid())
+  name        String
+  icon        String?
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+model ProjectTemplate {
+  id             String   @id @default(cuid())
+  name           String
+  description    String
+  difficulty     Int
+  estimatedTime  Int      // in hours
+  budget         Float    // in CNY
+  plants         String   // JSON string of plant names
+  tips           String
+  imageUrl       String?
+  isFeatured     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("project_templates")
 }
