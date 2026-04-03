@@ -33,6 +33,12 @@ model User {
   reports     Report[]
   posts       Post[]
   recommendations Recommendation[]
+  
+  // Social features relations
+  socialGroupMembers SocialGroupMember[]
+  userChallenges UserChallenge[]
+  achievements Achievement[]
+  carbonRecords CarbonRecord[]
 
   @@map("users")
 }
@@ -498,4 +504,107 @@ model HealthCheck {
   updatedAt     DateTime @updatedAt
 
   @@map("health_checks")
+}
+
+// Social Features Models
+model SocialGroup {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  isPublic    Boolean  @default(true) // For public groups
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members     SocialGroupMember[]
+  challenges  SocialChallenge[]
+
+  @@map("social_groups")
+}
+
+model SocialGroupMember {
+  id         String   @id @default(cuid())
+  userId     String
+  groupId    String
+  role       String   @default("member") // 'admin', 'moderator', 'member'
+  joinedAt   DateTime @default(now())
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group      SocialGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@map("social_group_members")
+}
+
+model SocialChallenge {
+  id          String   @id @default(cuid())
+  groupId     String
+  title       String
+  description String?
+  targetValue Float
+  unit        String   // 'percent', 'kg', 'count', etc.
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  group       SocialGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userChallenges UserChallenge[]
+
+  @@map("social_challenges")
+}
+
+model UserChallenge {
+  id          String   @id @default(cuid())
+  userId      String
+  challengeId String
+  progress    Float    @default(0)
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge   SocialChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, challengeId])
+  @@map("user_challenges")
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  icon        String?
+  points      Int      @default(100)
+  type        String   // 'milestone', 'challenge', 'special'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("achievements")
+}
+
+model CarbonRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  type          String   // 'EMISSION', 'REDUCTION', 'OFFSET'
+  carbonEmission Float
+  category      String   // 'ENERGY', 'WASTE', 'TRANSPORT', 'FOOD'
+  description   String?
+  date          DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  // Relations
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("carbon_records")
 }

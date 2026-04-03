@@ -179,7 +179,7 @@ export async function optimizeBalconyDesign(balconyConfig: {
                   balconyConfig.userPreferences.difficulty === 'medium' ? 'intermediate' : 'expert'
     });
     
-    if (!result.success) {
+    if (!plantRecommendations) {
       throw new Error('无法获取植物推荐');
     }
     
@@ -316,7 +316,7 @@ export async function optimizeBalconyDesign(balconyConfig: {
       
       design.layout.verticalSpace.push({
         type: 'hanging',
-        plants: hangingPlants
+        plants: hangingPlants.map((plant, index) => ({
           id: plant.id,
           name: plant.name,
           position: { 

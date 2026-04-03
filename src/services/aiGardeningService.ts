@@ -65,32 +65,40 @@ Please provide the response in JSON format with the following structure:
         max_tokens: 500
       });
 
-      const result = JSON.parse(response.choices[0].message.content);
+      const result = response.choices[0]?.message?.content ? JSON.parse(response.choices[0].message.content) : {};
       
       // Find or create plant in database
-      const plant = await prisma.plant.upsert({
+      // Try to find plant by name first, then create if not found
+      const existingPlant = await prisma.plant.findFirst({
         where: {
           name: result.plantName
-        },
-        update: {
+        }
+      });
+      
+      const plant = existingPlant 
+        ? await prisma.plant.update({
+            where: { id: existingPlant.id },
+            data: {
           description: result.careSuggestions.join(' '),
           careTips: result.careSuggestions,
           water: result.water,
           light: result.light,
-          temperature: { ideal: result.temperature },
-          humidity: { ideal: result.humidity }
-        },
-        create: {
+          temperature: JSON.stringify({ ideal: result.temperature }),
+          humidity: JSON.stringify({ ideal: result.humidity })
+        }
+        })
+        : await prisma.plant.create({
+            data: {
           name: result.plantName,
-          commonNames: [result.plantName],
+          commonNames: JSON.stringify([result.plantName]),
           category: 'indoor', // Default category
           light: result.light,
           water: result.water,
-          temperature: { ideal: result.temperature },
-          humidity: { ideal: result.humidity },
+          temperature: JSON.stringify({ ideal: result.temperature }),
+          humidity: JSON.stringify({ ideal: result.humidity }),
           careTips: result.careSuggestions,
           difficulty: 3, // Default difficulty
-          benefits: []
+          benefits: JSON.stringify([])
         }
       });
 
@@ -107,7 +115,7 @@ Please provide the response in JSON format with the following structure:
       };
     } catch (error) {
       console.error('Plant recognition error:', error);
-      throw createError('Failed to recognize plant image', 400, true);
+      throw createError('Failed to recognize plant image', 'RECOGNITION_ERROR', true);
     }
   }
 
@@ -156,7 +164,7 @@ Please provide the response in JSON format:
         max_tokens: 500
       });
 
-      const analysis = JSON.parse(response.choices[0].message.content);
+      const analysis = response.choices[0]?.message?.content ? JSON.parse(response.choices[0].message.content) : {};
       
       // Save balcony analysis to user preferences
       await prisma.user.update({
@@ -170,7 +178,7 @@ Please provide the response in JSON format:
       return analysis;
     } catch (error) {
       console.error('Balcony analysis error:', error);
-      throw createError('Failed to analyze balcony conditions', 400, true);
+      throw createError('Failed to analyze balcony conditions', 'ANALYSIS_ERROR', true);
     }
   }
 
@@ -222,7 +230,7 @@ Return in JSON format with plant IDs from our database if available.
         max_tokens: 800
       });
 
-      const recommendations = JSON.parse(response.choices[0].message.content);
+      const recommendations = response.choices[0]?.message?.content ? JSON.parse(response.choices[0].message.content) : {};
       
       // Save recommendations to database
       const savedRecommendations = await Promise.all(
@@ -252,7 +260,7 @@ Return in JSON format with plant IDs from our database if available.
       }));
     } catch (error) {
       console.error('Design recommendation error:', error);
-      throw createError('Failed to generate design recommendations', 400, true);
+      throw createError('Failed to generate design recommendations', 'DESIGN_ERROR', true);
     }
   }
 
@@ -285,7 +293,7 @@ Return in JSON format with plant IDs from our database if available.
             const alert = await this.createCareAlert(
               userId,
               projectPlant.plantId,
-              alertType,
+              alertType as 'water' | 'fertilize' | 'prune' | 'repot' | 'disease',
               projectPlant,
               project
             );
@@ -297,7 +305,7 @@ Return in JSON format with plant IDs from our database if available.
       return alerts;
     } catch (error) {
       console.error('Care alert generation error:', error);
-      throw createError('Failed to generate care alerts', 400, true);
+      throw createError('Failed to generate care alerts', 'CARE_ALERTS_ERROR', true);
     }
   }
 
@@ -321,7 +329,7 @@ Return in JSON format with plant IDs from our database if available.
       return plants;
     } catch (error) {
       console.error('Plant search error:', error);
-      throw createError('Failed to search plants', 400, true);
+      throw createError('Failed to search plants', 'SEARCH_ERROR', true);
     }
   }
 
@@ -340,7 +348,7 @@ Return in JSON format with plant IDs from our database if available.
       });
 
       if (!plant) {
-        throw createError('Plant not found', 404, true);
+        throw createError('Plant not found', 'PLANT_NOT_FOUND', true);
       }
 
       return {
@@ -383,7 +391,7 @@ Return in JSON format with plant IDs from our database if available.
   private async createCareAlert(
     userId: string,
     plantId: string,
-    type: string,
+    type: 'water' | 'fertilize' | 'prune' | 'repot' | 'disease',
     projectPlant: any,
     project: any
   ): Promise<CareAlert> {
@@ -490,7 +498,7 @@ Return in JSON format with plant IDs from our database if available.
       });
 
       if (!plant) {
-        throw createError('Plant not found', 404, true);
+        throw createError('Plant not found', 'PLANT_NOT_FOUND', true);
       }
 
       // Build comprehensive prompt for AI diagnosis
@@ -530,7 +538,7 @@ Provide diagnosis in JSON format:
         max_tokens: 600
       });
 
-      const aiDiagnosis = JSON.parse(response.choices[0].message.content);
+      const aiDiagnosis = response.choices[0]?.message?.content ? JSON.parse(response.choices[0].message.content) : {};
 
       // Find similar problems from database
       const similarProblems = await prisma.plantProblem.findMany({
@@ -557,7 +565,7 @@ Provide diagnosis in JSON format:
       };
     } catch (error) {
       console.error('Plant diagnosis error:', error);
-      throw createError('Failed to diagnose plant problem', 400, true);
+      throw createError('Failed to diagnose plant problem', 'DIAGNOSIS_ERROR', true);
     }
   }
 
@@ -594,10 +602,10 @@ Provide diagnosis in JSON format:
       const user = await prisma.user.findUnique({
         where: { id: userId },
         include: {
-          plants: {
+          projects: {
             include: {
               projectPlants: {
-                include: { project: true }
+                include: { plant: true }
               }
             }
           },
@@ -610,23 +618,31 @@ Provide diagnosis in JSON format:
       });
 
       if (!user) {
-        throw createError('User not found', 404, true);
+        throw createError('User not found', 'USER_NOT_FOUND', true);
       }
 
       // Get specific plant if provided
-      let targetPlants = user.plants;
+      let targetPlants: any[] = [];
       if (plantId) {
         const specificPlant = await prisma.plant.findUnique({
-          where: { id: plantId },
-          include: {
-            projectPlants: {
-              include: { project: true }
-            }
-          }
+          where: { id: plantId }
         });
         if (specificPlant) {
           targetPlants = [specificPlant];
         }
+      } else {
+        // Get user's plants from their projects
+        const userProjects = await prisma.project.findMany({
+          where: { userId: user.id },
+          include: {
+            projectPlants: {
+              include: {
+                plant: true
+              }
+            }
+          }
+        });
+        targetPlants = userProjects.flatMap(project => project.projectPlants.map(pp => pp.plant));
       }
 
       // Analyze care patterns and success rate
@@ -638,8 +654,8 @@ Based on the following user care history and plant performance patterns, generat
 
 User Profile:
 - Location: ${user.location || 'Unknown'}
-- Experience Level: ${user.preferences?.experience || 'intermediate'}
-- Care Style: ${user.preferences?.style || 'modern'}
+- Experience Level: ${'intermediate'}
+- Care Style: ${'modern'}
 
 Care History Analysis:
 ${carePatterns.successRate ? `Success Rate: ${carePatterns.successRate}%` : 'Limited data available'}
@@ -647,7 +663,7 @@ ${carePatterns.commonIssues.length > 0 ? `Common Issues: ${carePatterns.commonIs
 ${carePatterns.preferredTiming ? `Preferred Care Timing: ${carePatterns.preferredTiming}` : 'No timing preferences detected'}
 
 Plant Information:
-${targetPlants.map(plant => `
+${targetPlants.map((plant: any) => `
 - ${plant.name}: ${plant.category}, difficulty ${plant.difficulty}
   Current care: water ${plant.water}, light ${plant.light}
 `).join('')}
@@ -677,7 +693,7 @@ Generate optimized care recommendations in JSON format:
         max_tokens: 700
       });
 
-      const optimizedCare = JSON.parse(response.choices[0].message.content);
+      const optimizedCare = response.choices[0]?.message?.content ? JSON.parse(response.choices[0].message.content) : {};
 
       // Generate learning insights
       const learningInsights = await this.generatePersonalizedInsights(
@@ -699,7 +715,7 @@ Generate optimized care recommendations in JSON format:
       };
     } catch (error) {
       console.error('Personalized care recommendations error:', error);
-      throw createError('Failed to generate personalized care recommendations', 400, true);
+      throw createError('Failed to generate personalized care recommendations', 'GENERIC_ERROR', true);
     }
   }
 
@@ -714,7 +730,7 @@ Generate optimized care recommendations in JSON format:
   }> {
     // Simplified pattern analysis - in production, this would be more sophisticated
     const activities = user.activities || [];
-    const completedCare = activities.filter(act => act.type === 'care_completed');
+    const completedCare = activities.filter((act: any) => act.type === 'care_completed');
     
     const successRate = completedCare.length > 0 ? 
       Math.min(completedCare.length / Math.max(activities.length, 1) * 100, 100) : 0;
@@ -866,11 +882,11 @@ Prognosis: ${diagnosis.prognosis}
           type: 'personalized_care',
           title: 'Personalized Care Optimization',
           description: 'AI-optimized care recommendations based on your patterns',
-          data: {
+          data: JSON.stringify({
             plantId,
             recommendations,
             generatedAt: new Date().toISOString()
-          },
+          }),
           confidence: 0.85,
           userId,
           plantId
