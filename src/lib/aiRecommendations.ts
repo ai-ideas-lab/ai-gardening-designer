@@ -237,7 +237,7 @@ export async function optimizeBalconyDesign(balconyConfig: {
       // 南向：大部分阳光充足，少量遮阴
       design.layout.primaryZones.push({
         type: 'sun',
-        plants: plantRecommendations.recommendations.slice(0, 3).map((plant, index) => ({
+        plants: plantRecommendations?.recommendations.slice(0, 3).map((plant, index) => ({
           id: plant.id,
           name: plant.name,
           quantity: Math.floor(balconyConfig.budget / 20), // 根据预算调整数量
@@ -253,7 +253,7 @@ export async function optimizeBalconyDesign(balconyConfig: {
       
       design.layout.primaryZones.push({
         type: 'shade',
-        plants: plantRecommendations.recommendations.slice(3, 5).map((plant, index) => ({
+        plants: plantRecommendations?.recommendations.slice(3, 5).map((plant, index) => ({
           id: plant.id,
           name: plant.name,
           quantity: 1,
@@ -270,7 +270,7 @@ export async function optimizeBalconyDesign(balconyConfig: {
       // 北向：大部分阴凉，少量阳光
       design.layout.primaryZones.push({
         type: 'shade',
-        plants: plantRecommendations.recommendations.slice(0, 3).map((plant, index) => ({
+        plants: plantRecommendations?.recommendations.slice(0, 3).map((plant, index) => ({
           id: plant.id,
           name: plant.name,
           quantity: Math.floor(balconyConfig.budget / 30),
@@ -287,7 +287,7 @@ export async function optimizeBalconyDesign(balconyConfig: {
       // 东西向：过渡区域
       design.layout.primaryZones.push({
         type: 'transition',
-        plants: plantRecommendations.recommendations.slice(0, 2).map((plant, index) => ({
+        plants: plantRecommendations?.recommendations.slice(0, 2).map((plant, index) => ({
           id: plant.id,
           name: plant.name,
           quantity: Math.floor(balconyConfig.budget / 25),
@@ -304,9 +304,19 @@ export async function optimizeBalconyDesign(balconyConfig: {
     
     // 垂直空间利用
     if (balconyConfig.size.height > 2.5) {
+      const hangingPlants = plantRecommendations?.recommendations.slice(0, 2).map((plant, index) => ({
+        id: plant.id,
+        name: plant.name,
+        position: { 
+          x: (index + 1) * (balconyConfig.size.width / 3), 
+          y: balconyConfig.size.depth / 2,
+          z: balconyConfig.size.height - 0.5
+        }
+      })) || [];
+      
       design.layout.verticalSpace.push({
         type: 'hanging',
-        plants: plantRecommendations.recommendations.slice(0, 2).map((plant, index) => ({
+        plants: hangingPlants
           id: plant.id,
           name: plant.name,
           position: { 

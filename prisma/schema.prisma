@@ -467,3 +467,35 @@ model ProjectTemplate {
 
   @@map("project_templates")
 }
+
+// AI and Health Monitoring Models
+model AIRequest {
+  id             String   @id @default(cuid())
+  type           String   // 'plant_recognition', 'design_recommendation', 'diagnosis'
+  prompt         String
+  response       String?
+  processingTime Int      // in milliseconds
+  success        Boolean  @default(false)
+  confidence     Float?   // 0-1
+  verifiedCorrect Boolean @default(false)
+  feedback       String?
+  userId         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("ai_requests")
+}
+
+model HealthCheck {
+  id            String   @id @default(cuid())
+  overallScore  Int      // 0-100
+  status        String   // 'healthy', 'warning', 'critical'
+  duration      Int      // in milliseconds
+  metrics       String   // JSON string with detailed metrics
+  alertCount    Int      @default(0)
+  criticalAlertCount Int  @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("health_checks")
+}

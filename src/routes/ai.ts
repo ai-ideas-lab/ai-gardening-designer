@@ -53,7 +53,7 @@ router.post('/recommendations', trackStartTime, async (req, res) => {
       message: result.message,
       timestamp: new Date().toISOString(),
       algorithm: 'smart-matching-v1',
-      processingTime: Date.now() - req.startTime
+      processingTime: Date.now() - (req as any).startTime
     });
     
   } catch (error) {
@@ -110,7 +110,7 @@ router.post('/balcony-design', trackStartTime, async (req, res) => {
       message: result.message,
       timestamp: new Date().toISOString(),
       algorithm: 'space-optimization-v1',
-      processingTime: Date.now() - req.startTime
+      processingTime: Date.now() - (req as any).startTime
     });
     
   } catch (error) {
@@ -161,7 +161,7 @@ router.post('/diagnose', trackStartTime, async (req, res) => {
       message: result.message,
       timestamp: new Date().toISOString(),
       algorithm: 'health-diagnosis-v1',
-      processingTime: Date.now() - req.startTime
+      processingTime: Date.now() - (req as any).startTime
     });
     
   } catch (error) {
@@ -230,11 +230,11 @@ router.get('/maintenance-tips/:plantId', async (req, res) => {
     
     // 根据植物特性添加警告
     if (plant.toxicity === 'toxic-to-pets') {
-      maintenanceTips.warnings.push('注意：该植物对宠物有毒，请放置在宠物无法接触的地方');
+      (maintenanceTips.warnings as string[]).push('注意：该植物对宠物有毒，请放置在宠物无法接触的地方');
     }
     
     if (plant.difficulty >= 4) {
-      maintenanceTips.warnings.push('该植物需要较高养护技能，建议有经验的园艺爱好者尝试');
+      (maintenanceTips.warnings as string[]).push('该植物需要较高养护技能，建议有经验的园艺爱好者尝试');
     }
     
     res.json({
@@ -485,7 +485,7 @@ router.post('/diagnose-problem', trackStartTime, async (req, res) => {
       message: '完成植物问题诊断',
       timestamp: new Date().toISOString(),
       algorithm: 'smart-diagnosis-v1',
-      processingTime: Date.now() - req.startTime
+      processingTime: Date.now() - (req as any).startTime
     });
     
   } catch (error) {
@@ -534,7 +534,7 @@ router.post('/personalized-care', trackStartTime, async (req, res) => {
         : '为用户生成全面个性化护理建议',
       timestamp: new Date().toISOString(),
       algorithm: 'personalized-learning-v1',
-      processingTime: Date.now() - req.startTime
+      processingTime: Date.now() - (req as any).startTime
     });
     
   } catch (error) {

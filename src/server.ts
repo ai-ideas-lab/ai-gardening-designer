@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import cron from 'node-cron';
+import { requestTimingMiddleware } from './middleware/requestTiming';
 
 // Load environment variables
 dotenv.config();
@@ -43,6 +44,7 @@ app.use(cors({
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(requestTimingMiddleware);
 
 // Basic user routes
 app.get('/api/users/profile', async (req, res) => {
