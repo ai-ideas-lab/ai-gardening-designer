@@ -390,6 +390,10 @@ app.use('/api/auth', authRoutes);
 import communityRoutes from './routes/community';
 app.use('/api/community', communityRoutes);
 
+// Social routes
+import socialRoutes from './routes/social';
+app.use('/api/social', socialRoutes);
+
 // Plant routes
 import plantRoutes from './routes/plant';
 app.use('/api/plants', plantRoutes);
