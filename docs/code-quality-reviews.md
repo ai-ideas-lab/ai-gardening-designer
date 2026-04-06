@@ -1,338 +1,506 @@
-# AI Gardening Designer - 代码质量审查报告
+# 🌱 AI Gardening Designer - 代码质量巡检报告
 
-## 📋 项目概览
+## 项目基本信息
 - **项目名称**: ai-gardening-designer
-- **审查时间**: 2026-04-05 20:30
-- **审查依据**: 小时数选择 (20 % 13 = 7)
-- **项目路径**: `/Users/wangshihao/projects/openclaws/ai-gardening-designer`
+- **审查时间**: 2026-04-06 20:30 (Asia/Shanghai)
+- **审查小时**: 20
+- **项目总数**: 12个
+- **选中项目索引**: 8 (20 % 12 = 8)
+- **审查版本**: 1.0.0
 
-## 🎯 代码质量评分: **6.5/10**
+## 📊 总体评分: 6.5/10
 
-### 详细扣分项:
-- **错误处理**: -1.5分
-- **安全性**: -1.0分  
-- **类型安全**: -0.5分
-- **性能问题**: -0.5分
+### 评分标准
+- **错误处理**: 7/10
+- **TypeScript类型**: 8/10  
+- **安全实践**: 6/10
+- **性能优化**: 5/10
+- **API设计**: 7/10
+- **代码规范**: 7/10
 
 ---
 
 ## 🔍 详细问题分析
 
-### 1. 错误处理问题 ⚠️ **-1.5分**
+### 1. 错误处理分析 (7/10)
 
-#### 问题1.1: 缺乏全局错误边界处理
-**位置**: `src/server.ts` (所有API路由)
-**问题**: 多个API端点缺乏统一的错误处理，错误信息可能泄露给客户端
+#### ✅ 优点
+- 实现了全局错误处理器 `errorHandler.ts`
+- 使用了 `asyncHandler` 包装器统一处理异步错误
+- 定义了标准化的错误响应格式
+- 对Prisma数据库错误进行了分类处理
+
+#### ❌ 发现的问题
+
+**问题1: 关键路径缺乏错误边界**
+- **位置**: `src/server.ts` 第62-73行
+- **问题**: 健康检查端点没有完整的错误边界处理
+- **代码**:
 ```typescript
-// src/server.ts: 第38-56行
 app.get('/health', async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'ok', database: 'connected' });
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      environment: process.env.NODE_ENV
+    });
   } catch (error) {
     res.status(500).json({ 
       status: 'error', 
+      timestamp: new Date().toISOString(),
       database: 'disconnected',
-      error: (error as Error).message // ❌ 错误信息可能泄露敏感信息
+      error: (error as Error).message
+    });
+  }
+});
+```
+- **修复建议**: 
+```typescript
+app.get('/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    const health = {
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      environment: process.env.NODE_ENV || 'unknown',
+      uptime: process.uptime(),
+      memory: process.memoryUsage()
+    };
+    res.json(health);
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(503).json({ 
+      status: 'error', 
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: 'Service unavailable',
+      details: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
     });
   }
 });
 ```
 
-**修复建议**:
+**问题2: AI服务错误处理不完整**
+- **位置**: `src/services/aiGardeningService.ts` 第55-72行
+- **问题**: OpenAI API调用缺乏重试机制和详细错误分类
+- **修复建议**:
 ```typescript
-// 使用统一的错误处理中间件
-app.get('/health', asyncHandler(async (req, res) => {
-  await prisma.$queryRaw`SELECT 1`;
-  res.json({ status: 'ok', database: 'connected' });
-}));
-```
-
-#### 问题1.2: 认证中间件缺陷
-**位置**: `src/middleware/auth.ts: 15-26`
-**问题**: 直接硬编码mock用户，生产环境存在安全风险
-```typescript
-export const authenticate = (req: Request, res: Response, next: NextFunction) => {
-  try {
-    // ❌ 硬编码mock用户，绕过真实认证
-    const mockUser = {
-      id: 'test-user-id',
-      email: 'test@example.com',
-      name: 'Test User'
-    };
-    (req as AuthRequest).user = mockUser;
-    next();
-  } catch (error) {
-    // 错误处理不完善
-    res.status(401).json({
-      success: false,
-      error: { message: 'Authentication failed' },
-      timestamp: new Date().toISOString()
-    });
-  }
-};
-```
-
-**修复建议**:
-```typescript
-export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new Error('Authorization token required');
+private async withRetry<T>(
+  fn: () => Promise<T>, 
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<T> {
+  let lastError: Error;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt === maxRetries) break;
+      
+      const waitTime = delayMs * Math.pow(2, attempt - 1);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
     }
-
-    const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
-    
-    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
-    if (!user) {
-      throw new Error('User not found');
-    }
-    
-    (req as AuthRequest).user = user;
-    next();
-  } catch (error) {
-    next(error);
   }
-};
+  
+  throw createError(`AI service failed after ${maxRetries} attempts: ${lastError?.message}`, 'AI_SERVICE_ERROR', true);
+}
 ```
 
-### 2. 安全问题 ⚠️ **-1.0分**
+### 2. TypeScript类型分析 (8/10)
 
-#### 问题2.1: 硬编码敏感信息
-**位置**: `src/routes/auth.ts: 10`
-**问题**: JWT密钥硬编码，存在安全风险
+#### ✅ 优点
+- 使用了严格的TypeScript配置
+- 定义了完整的类型定义文件 `types/index.ts`
+- 函数参数和返回值都有类型注解
+- 使用了接口定义复杂数据结构
+
+#### ❌ 发现的问题
+
+**问题1: 过度使用any类型**
+- **位置**: `src/services/aiGardeningService.ts` 第141行
+- **问题**: 在JSON解析时使用了any类型
+- **代码**:
 ```typescript
-// ❌ 硬编码JWT密钥，存在严重安全风险
+const result = response.choices[0]?.message?.content ? JSON.parse(response.choices[0].message.content) : {};
+```
+- **修复建议**:
+```typescript
+interface PlantRecognitionResult {
+  plantName: string;
+  confidence: number;
+  careSuggestions: string[];
+  water: string;
+  light: string;
+  temperature: string;
+  humidity: string;
+}
+
+const result: PlantRecognitionResult = response.choices[0]?.message?.content ? 
+  JSON.parse(response.choices[0].message.content) : {
+    plantName: 'Unknown',
+    confidence: 0,
+    careSuggestions: [],
+    water: 'unknown',
+    light: 'unknown',
+    temperature: 'unknown',
+    humidity: 'unknown'
+  };
+```
+
+**问题2: 缺少类型守卫**
+- **位置**: `src/routes/auth.ts` 第63行
+- **问题**: JWT验证后缺少类型守卫
+- **修复建议**:
+```typescript
+interface DecodedToken {
+  id: string;
+  email: string;
+  iat?: number;
+  exp?: number;
+}
+
+const decoded = jwt.verify(token, JWT_SECRET) as DecodedToken;
+
+if (!decoded.id || !decoded.email) {
+  throwError('Invalid token payload', 401, true);
+}
+```
+
+### 3. 安全问题分析 (6/10)
+
+#### ✅ 优点
+- 使用了bcrypt进行密码哈希
+- 实现了JWT令牌认证
+- 使用了helmet安全头
+- 配置了CORS策略
+
+#### ❌ 发现的问题
+
+**问题1: 硬编码JWT密钥回退**
+- **位置**: `src/routes/auth.ts` 第9行
+- **问题**: JWT密钥有硬编码回退值
+- **代码**:
+```typescript
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
 ```
-
-**修复建议**:
+- **修复建议**:
 ```typescript
-// ✅ 强制要求环境变量
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   throw new Error('JWT_SECRET environment variable is required');
 }
 ```
 
-#### 问题2.2: CORS配置过于宽松
-**位置**: `src/server.ts: 19-25`
-**问题**: 开发环境允许多个源，可能导致CSRF攻击
+**问题2: 缺少输入验证**
+- **位置**: `src/server.ts` 第144-156行
+- **问题**: 项目创建端点缺少严格的输入验证
+- **修复建议**:
 ```typescript
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? process.env.CORS_ORIGIN 
-    : [process.env.CORS_ORIGIN, process.env.CORS_ORIGIN_DEV], // ❌ 多个源增加攻击面
-  credentials: true
-}));
+import Joi from 'joi';
+
+const createProjectSchema = Joi.object({
+  name: Joi.string().min(2).max(100).required(),
+  description: Joi.string().max(500).optional(),
+  balconyJson: Joi.object().optional(),
+  designJson: Joi.object().optional(),
+  location: Joi.string().max(200).optional(),
+  area: Joi.number().positive().optional(),
+  budget: Joi.number().positive().optional()
+});
+
+const { error, value } = createProjectSchema.validate(req.body);
+if (error) {
+  return res.status(400).json({
+    success: false,
+    error: error.details[0].message,
+    timestamp: new Date().toISOString()
+  });
+}
 ```
 
-**修复建议**:
+**问题3: 文件上传缺少安全检查**
+- **位置**: 未发现文件上传安全验证
+- **问题**: 缺少文件类型、大小、病毒扫描检查
+- **修复建议**:
 ```typescript
-const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [process.env.CORS_ORIGIN!] 
-  : [process.env.CORS_ORIGIN_DEV || 'http://localhost:5173'];
+import multer from 'multer';
+import { extname } from 'path';
 
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-```
+const fileFilter = (req: any, file: any, cb: any) => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  
+  if (!allowedTypes.includes(file.mimetype)) {
+    return cb(new Error('Invalid file type'), false);
+  }
+  
+  if (file.size > maxSize) {
+    return cb(new Error('File too large'), false);
+  }
+  
+  cb(null, true);
+};
 
-#### 问题2.3: 文件上传缺乏安全验证
-**位置**: `src/routes/upload.ts` (需要检查)
-**问题**: 上传文件可能包含恶意代码
-
-**修复建议**:
-```typescript
-// 添加文件类型和大小验证
 const upload = multer({
-  dest: 'uploads/',
+  storage: multer.memoryStorage(),
+  fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      return cb(new Error('Invalid file type'), false);
-    }
-    cb(null, true);
+    fileSize: 10 * 1024 * 1024 // 10MB
   }
 });
 ```
 
-### 3. TypeScript类型安全 ⚠️ **-0.5分**
+### 4. 性能问题分析 (5/10)
 
-#### 问题3.1: 过度使用 any 类型
-**位置**: `src/types/index.ts: 48, 56, 64, 72`
-**问题**: 核心接口使用了过多的 any 类型
+#### ❌ 严重问题
+
+**问题1: N+1查询问题**
+- **位置**: `src/server.ts` 第185-204行
+- **问题**: 获取植物列表时可能导致N+1查询
+- **代码**:
 ```typescript
-export interface User {
-  preferences?: Record<string, any>; // ❌ 应该严格定义类型
-  balconyJson: Record<string, any>; // ❌ 应该严格定义类型
-}
+const formattedPlants = plants.map(plant => ({
+  id: plant.id,
+  name: plant.name,
+  scientificName: plant.scientificName,
+  commonNames: plant.commonNames ? JSON.parse(plant.commonNames) : [],
+  // ... 其他字段
+}));
 ```
-
-**修复建议**:
+- **修复建议**:
 ```typescript
-interface UserPreferences {
-  balconyType?: 'small' | 'medium' | 'large';
-  balconySize?: number;
-  balconyDirection?: 'north' | 'south' | 'east' | 'west';
-  style?: 'modern' | 'traditional' | 'minimalist';
-  maintenance?: 'low' | 'medium' | 'high';
-}
+// 使用JSON解析缓存
+const commonNamesCache = new Map<string, string[]>();
+const temperatureCache = new Map<string, any>();
+const humidityCache = new Map<string, any>();
 
-export interface User {
-  id: string;
-  email: string;
-  preferences?: UserPreferences;
-  balconyJson: BalconyLayout; // 使用具体类型
-}
-```
-
-#### 问题3.2: API响应类型不严格
-**位置**: `src/services/aiGardeningService.ts: 203-220`
-**问题**: AI服务返回的响应类型定义不够严格
-
-### 4. 性能问题 ⚠️ **-0.5分**
-
-#### 问题4.1: 数据库查询缺乏优化
-**位置**: `src/server.ts: 578-600`
-**问题**: 获取提醒列表时可能查询大量数据
-```typescript
-// ❌ 可能查询大量数据，缺乏分页
-const reminders = await prisma.reminder.findMany({
-  where,
-  include: {
-    project: { select: { id: true, name: true } },
-    plant: { select: { id: true, name: true } },
-    user: { select: { id: true, name: true, email: true } }
-  },
-  orderBy: { dueDate: 'asc' }
+const formattedPlants = plants.map(plant => {
+  const commonNames = plant.commonNames ? 
+    (commonNamesCache.has(plant.id) ? 
+     commonNamesCache.get(plant.id) : 
+     JSON.parse(plant.commonNames)) : [];
+  commonNamesCache.set(plant.id, commonNames);
+  
+  return {
+    id: plant.id,
+    name: plant.name,
+    scientificName: plant.scientificName,
+    commonNames,
+    // ... 其他字段
+  };
 });
 ```
 
-**修复建议**:
+**问题2: 同步JSON解析**
+- **位置**: 多处JSON.parse调用
+- **问题**: 在请求处理中进行同步JSON解析可能阻塞事件循环
+- **修复建议**:
 ```typescript
-// ✅ 添加分页支持
-const page = parseInt(req.query.page as string) || 1;
-const limit = parseInt(req.query.limit as string) || 10;
-const offset = (page - 1) * limit;
+// 预解析缓存
+const parseJSONSafely = <T>(jsonString: string | null, defaultValue: T): T => {
+  if (!jsonString) return defaultValue;
+  try {
+    return JSON.parse(jsonString);
+  } catch {
+    return defaultValue;
+  }
+};
 
-const [reminders, totalCount] = await Promise.all([
-  prisma.reminder.findMany({
-    where,
-    include: {
-      project: { select: { id: true, name: true } },
-      plant: { select: { id: true, name: true } },
-      user: { select: { id: true, name: true, email: true } }
+// 使用示例
+const commonNames = parseJSONSafely(plant.commonNames, []);
+```
+
+**问题3: 缺少缓存机制**
+- **位置**: `src/services/aiGardeningService.ts`
+- **问题**: AI服务调用和数据库查询缺少缓存
+- **修复建议**:
+```typescript
+import NodeCache from 'node-cache';
+
+const cache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+
+export class AIGardeningService {
+  async recognizePlant(imageBuffer: Buffer): Promise<PlantRecognitionResult> {
+    const cacheKey = `plant-recognition-${imageBuffer.toString('base64').substring(0, 20)}`;
+    const cached = cache.get<PlantRecognitionResult>(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+    
+    const result = await this.withRetry(() => this.openaiRecognition(imageBuffer));
+    cache.set(cacheKey, result);
+    return result;
+  }
+}
+```
+
+### 5. API设计评估 (7/10)
+
+#### ✅ 优点
+- RESTful API结构清晰
+- 统一的响应格式
+- 良好的错误响应机制
+- 合理的路由组织
+
+#### ❌ 发现的问题
+
+**问题1: 缺少API版本控制**
+- **问题**: 没有API版本管理
+- **修复建议**:
+```typescript
+// 使用版本前缀
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/projects', projectRoutes);
+app.use('/api/v1/plants', plantRoutes);
+```
+
+**问题2: 缺少分页和限制**
+- **位置**: `src/server.ts` 第185行
+- **问题**: 获取植物列表没有分页
+- **修复建议**:
+```typescript
+app.get('/api/plants', async (req, res) => {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 20;
+  const offset = (page - 1) * limit;
+  
+  const [plants, total] = await Promise.all([
+    prisma.plant.findMany({
+      skip: offset,
+      take: limit,
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.plant.count()
+  ]);
+  
+  res.json({
+    success: true,
+    data: plants,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
     },
-    orderBy: { dueDate: 'asc' },
-    skip: offset,
-    take: limit
-  }),
-  prisma.reminder.count({ where })
-]);
+    timestamp: new Date().toISOString()
+  });
+});
+```
 
-return {
-  data: reminders,
-  pagination: {
-    page,
-    limit,
-    total: totalCount,
-    totalPages: Math.ceil(totalCount / limit)
+### 6. 代码规范问题 (7/10)
+
+#### ❌ 发现的问题
+
+**问题1: 魔法数字**
+- **位置**: 多处使用魔法数字
+- **修复建议**:
+```typescript
+// 创建常量文件
+export const CONSTANTS = {
+  PAGINATION: {
+    DEFAULT_PAGE: 1,
+    DEFAULT_LIMIT: 20,
+    MAX_LIMIT: 100
+  },
+  FILES: {
+    MAX_SIZE: 10 * 1024 * 1024, // 10MB
+    ALLOWED_TYPES: ['image/jpeg', 'image/png', 'image/webp']
+  },
+  AI: {
+    MAX_RETRIES: 3,
+    RETRY_DELAY: 1000,
+    CONFIDENCE_THRESHOLD: 0.85
   }
 };
 ```
 
-#### 问题4.2: 内存泄漏风险
-**位置**: `src/server.ts: 1050-1080`
-**问题**: 定时任务中可能累积大量数据
-
-**修复建议**:
+**问题2: 缺少日志记录**
+- **问题**: 缺少结构化日志
+- **修复建议**:
 ```typescript
-// 定期清理过期的提醒
-cron.schedule('0 2 * * *', async () => { // 每天凌晨2点
-  try {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    await prisma.reminder.deleteMany({
-      where: {
-        completed: true,
-        updatedAt: { lt: thirtyDaysAgo }
-      }
-    });
-  } catch (error) {
-    console.error('Cleanup error:', error);
-  }
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'logs/combined.log' })
+  ]
 });
+
+// 使用示例
+logger.info('User login', { userId: user.id, email: user.email });
 ```
-
-### 5. API设计问题 ⚠️ **-0.3分**
-
-#### 问题5.1: 缺乏API版本控制
-**位置**: `src/server.ts`
-**问题**: 所有API路由都缺乏版本控制
-
-**修复建议**:
-```typescript
-// 添加版本前缀
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/plants', plantRoutes);
-app.use('/api/v1/projects', projectRoutes);
-```
-
-#### 问题5.2: 响应格式不一致
-**位置**: 多个API端点
-**问题**: 某些API返回结构不一致
 
 ---
 
-## 🛠️ 修复建议优先级
+## 🎯 优先级修复建议
 
 ### 🔴 高优先级 (立即修复)
-1. **修复认证中间件** - 消除硬编码mock用户
-2. **强化JWT密钥管理** - 移除默认值，强制环境变量
-3. **统一错误处理** - 实现全局错误边界
+1. **修复JWT硬编码安全问题**
+2. **添加输入验证中间件**
+3. **解决N+1查询问题**
+4. **实现文件上传安全检查**
 
-### 🟡 中优先级 (本周内修复)  
-4. **优化CORS配置** - 限制允许的源
-5. **添加文件上传安全验证**
-6. **改进数据库查询性能** - 添加分页
+### 🟡 中优先级 (本周内修复)
+1. **添加API版本控制**
+2. **实现分页机制**
+3. **添加缓存层**
+4. **完善错误处理重试机制**
 
-### 🟢 低优先级 (本月内修复)
-7. **加强TypeScript类型定义**
-8. **添加API版本控制**
-9. **统一响应格式**
-
----
-
-## 📊 代码质量总结
-
-| 维度 | 评分 | 说明 |
-|------|------|------|
-| **错误处理** | 6.5/10 | 基础错误处理存在，但缺乏统一性和安全性 |
-| **安全性** | 6.0/10 | 存在硬编码敏感信息，认证机制不完善 |
-| **类型安全** | 7.5/10 | TypeScript配置良好，但存在过度使用any类型 |
-| **性能** | 7.0/10 | 基础性能良好，但存在未优化的查询 |
-| **架构设计** | 7.0/10 | 整体架构清晰，但缺乏API版本控制 |
-| **可维护性** | 7.5/10 | 代码结构清晰，文档完善 |
-
-## 🎯 改进目标
-- **目标评分**: 8.5/10
-- **关键改进**: 强化安全性、统一错误处理、优化性能
+### 🟢 低优先级 (下个版本修复)
+1. **添加结构化日志**
+2. **优化TypeScript类型定义**
+3. **添加API文档生成**
+4. **实现性能监控**
 
 ---
 
-## 📝 审查信息
-- **审查者**: 孔明 (AI代码质量巡检)
-- **审查工具**: OpenClaw 代码分析系统
-- **下次审查**: 2026-04-09 (按4小时周期)
-- **审查周期**: 每4小时轮流审查不同项目
+## 📈 改进路线图
+
+### 第1阶段: 安全加固 (1-2周)
+- [ ] 修复所有安全漏洞
+- [ ] 实现输入验证
+- [ ] 添加安全中间件
+- [ ] 完善错误处理
+
+### 第2阶段: 性能优化 (2-3周)
+- [ ] 实现Redis缓存
+- [ ] 优化数据库查询
+- [ ] 添加CDN支持
+- [ ] 实现负载均衡准备
+
+### 第3阶段: 可维护性提升 (2-3周)
+- [ ] 添加单元测试覆盖
+- [ ] 实现CI/CD流程
+- [ ] 添加API监控
+- [ ] 完善文档
+
+---
+
+## 🏆 总结
+
+AI Gardening Designer项目整体架构合理，技术栈选择得当，但在安全性、性能优化和代码规范方面还有较大改进空间。建议优先处理安全问题，然后逐步进行性能优化和代码质量提升。
+
+**关键优势**:
+- 完整的AI集成方案
+- 良好的项目结构
+- 合理的技术选型
+
+**主要改进方向**:
+- 安全性加固
+- 性能优化
+- 代码规范化
+- 测试覆盖率提升
+
+---
+
+*审查完成时间: 2026-04-06 20:45*
+*下次审查时间: 2026-04-06 24:30 (4小时后)*
