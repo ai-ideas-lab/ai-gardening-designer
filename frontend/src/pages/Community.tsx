@@ -1,233 +1,183 @@
-import React, { useState } from 'react';
-import { Container, Typography, Card, CardContent, Grid, TextField, Button, Box, Chip, Alert, List, ListItem, ListItemText, Avatar } from '@mui/material';
-import { Forum, PostAdd } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Container, TextField, InputAdornment, Box, Typography, CircularProgress, Button } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import PostCard from '../components/PostCard';
+import type { Post } from '../types/community';
+import { CommunityService } from '../services/community';
+
+interface CommunityState {
+  posts: Post[];
+  loading: boolean;
+  error: string | null;
+  searchQuery: string;
+  filteredPosts: Post[];
+}
 
 const Community: React.FC = () => {
-  const { user } = useAuth();
-  const [newPost, setNewPost] = useState({ title: '', content: '' });
-  const [posts] = useState([
-    {
-      id: 1,
-      title: '阳台新手求助：薄荷叶子发黄怎么办？',
-      content: '我的薄荷最近叶子开始发黄，不知道是什么原因，有经验的朋友可以帮忙看看吗？我是南向阳台，光照充足。',
-      author: '园艺新手小王',
-      authorAvatar: '👨‍🌾',
-      category: '求助',
-      likes: 12,
-      comments: 8,
-      time: '2小时前'
-    },
-    {
-      id: 2,
-      title: '分享我的多肉植物组合搭配',
-      content: '经过半年的摸索，终于找到了最适合我家阳台的多肉组合。分享给大家！主要搭配了玉露、生石花、钱串等。',
-      author: '多肉爱好者',
-      authorAvatar: '🌵',
-      category: '分享',
-      likes: 25,
-      comments: 15,
-      time: '5小时前'
-    },
-    {
-      id: 3,
-      title: 'AI推荐给我的植物搭配效果不错',
-      content: '用了AI设计功能推荐的植物组合，绿萝+薄荷+吊兰，确实很好养活，而且净化空气效果明显。',
-      author: '科技达人',
-      authorAvatar: '🤖',
-      category: '体验',
-      likes: 18,
-      comments: 6,
-      time: '1天前'
-    }
-  ]);
+  const [state, setState] = useState<CommunityState>({
+    posts: [],
+    loading: true,
+    error: null,
+    searchQuery: '',
+    filteredPosts: [],
+  });
 
-  const handleCreatePost = () => {
-    if (newPost.title.trim() && newPost.content.trim()) {
-      // This would make an API call to create the post
-      console.log('Creating post:', newPost);
-      setNewPost({ title: '', content: '' });
-      // In a real app, you'd add the post to the list and refresh
+  const fetchPosts = useCallback(async () => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      const fetchedPosts = await CommunityService.getPosts();
+      setState(prev => ({ 
+        ...prev, 
+        posts: fetchedPosts, 
+        filteredPosts: fetchedPosts,
+        loading: false 
+      }));
+    } catch (error) {
+      console.error('获取帖子失败:', error);
+      setState(prev => ({ 
+        ...prev, 
+        error: '获取帖子失败，请稍后重试',
+        loading: false 
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
+
+  const searchPosts = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setState(prev => ({ ...prev, filteredPosts: prev.posts }));
+      return;
+    }
+    
+    try {
+      const searchResults = await CommunityService.searchPosts(query);
+      setState(prev => ({ ...prev, filteredPosts: searchResults }));
+    } catch (error) {
+      console.error('搜索帖子失败:', error);
+      setState(prev => ({ ...prev, error: '搜索失败，请稍后重试' }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      searchPosts(state.searchQuery);
+    }, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [state.searchQuery, searchPosts]);
+
+  const handlePostClick = (post: Post) => {
+    // 这里可以导航到帖子详情页
+    console.log('点击帖子:', post.title);
+    // 暂时用alert代替
+    alert(`查看帖子: ${post.title}\n\n${post.content}`);
+  };
+
+  const handleLike = async (postId: string) => {
+    try {
+      await CommunityService.toggleLikePost(postId);
+      // 更新本地状态
+      const updatedPosts = state.posts.map(post => 
+        post.id === postId ? { ...post, liked: !post.liked } : post
+      );
+      
+      setState(prev => ({ 
+        ...prev, 
+        posts: updatedPosts,
+        filteredPosts: prev.searchQuery.trim() 
+          ? prev.filteredPosts.map(post => 
+              post.id === postId ? { ...post, liked: !post.liked } : post
+            )
+          : updatedPosts
+      }));
+    } catch (error) {
+      console.error('点赞失败:', error);
+      setState(prev => ({ ...prev, error: '操作失败，请稍后重试' }));
     }
   };
 
-  const categories = ['全部', '求助', '分享', '体验', '养护', '设计'];
+  if (state.loading) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
+        <CircularProgress />
+        <Typography variant="body1" sx={{ mt: 2 }}>
+          加载中...
+        </Typography>
+      </Container>
+    );
+  }
+
+  if (state.error) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
+        <Typography variant="body1" color="error">
+          {state.error}
+        </Typography>
+        <Button 
+          variant="outlined" 
+          onClick={fetchPosts}
+          sx={{ mt: 2 }}
+        >
+          重试
+        </Button>
+      </Container>
+    );
+  }
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4 }}>
+    <Container maxWidth="md" sx={{ mt: 4 }}>
       <Typography variant="h4" component="h1" gutterBottom>
-        社区交流
-      </Typography>
-
-      {/* Create Post Section */}
-      {user && (
-        <Card sx={{ mb: 4 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
-              发表帖子
-            </Typography>
-            <TextField
-              fullWidth
-              label="标题"
-              value={newPost.title}
-              onChange={(e) => setNewPost({ ...newPost, title: e.target.value })}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              fullWidth
-              label="内容"
-              multiline
-              rows={4}
-              value={newPost.content}
-              onChange={(e) => setNewPost({ ...newPost, content: e.target.value })}
-              sx={{ mb: 2 }}
-            />
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Box>
-                <Chip 
-                  label="求助" 
-                  color="primary" 
-                  size="small"
-                  sx={{ mr: 1 }}
-                />
-              </Box>
-              <Button 
-                variant="contained" 
-                startIcon={<PostAdd />}
-                onClick={handleCreatePost}
-                disabled={!newPost.title.trim() || !newPost.content.trim()}
-              >
-                发布
-              </Button>
-            </Box>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Community Stats */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h6" color="text.secondary">
-                活跃用户
-              </Typography>
-              <Typography variant="h4" component="h2" sx={{ color: '#2e7d32' }}>
-                1,234
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h6" color="text.secondary">
-                帖子总数
-              </Typography>
-              <Typography variant="h4" component="h2" sx={{ color: '#2e7d32' }}>
-                5,678
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h6" color="text.secondary">
-                今日新增
-              </Typography>
-              <Typography variant="h4" component="h2" sx={{ color: '#2e7d32' }}>
-                45
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h6" color="text.secondary">
-                专家数
-              </Typography>
-              <Typography variant="h4" component="h2" sx={{ color: '#2e7d32' }}>
-                89
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Posts Section */}
-      <Typography variant="h5" component="h2" gutterBottom sx={{ mb: 3 }}>
-        最新帖子
+        社区广场
       </Typography>
       
-      {posts.length === 0 ? (
-        <Alert severity="info">
-          还没有帖子，快来发布第一个帖子吧！
-        </Alert>
-      ) : (
-        <Grid container spacing={3}>
-          {posts.map((post) => (
-            <Grid item xs={12} key={post.id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                    <Avatar sx={{ mr: 2, bgcolor: '#f57c00' }}>
-                      {post.authorAvatar}
-                    </Avatar>
-                    <Box sx flexGrow={1}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="h6" component="h3">
-                          {post.title}
-                        </Typography>
-                        <Chip 
-                          label={post.category}
-                          color="primary"
-                          size="small"
-                        />
-                      </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        {post.author} · {post.time}
-                      </Typography>
-                    </Box>
-                  </Box>
-                  
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {post.content}
-                  </Typography>
-                  
-                  <Box sx={{ display: 'flex', alignItems: 'center', color: '#666' }}>
-                    <Button size="small" sx={{ mr: 2 }}>
-                      👍 {post.likes}
-                    </Button>
-                    <Button size="small">
-                      💬 {post.comments}
-                    </Button>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      <TextField
+        fullWidth
+        placeholder="搜索帖子、标签或内容..."
+        value={state.searchQuery}
+        onChange={(e) => setState(prev => ({ ...prev, searchQuery: e.target.value }))}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon />
+            </InputAdornment>
+          ),
+        }}
+        sx={{ mb: 4 }}
+      />
 
-      {/* Hot Topics */}
-      <Box sx={{ mt: 6 }}>
-        <Typography variant="h5" component="h2" gutterBottom>
-          热门话题
-        </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {['阳台养花', '多肉植物', '薄荷养护', 'AI推荐', '室内植物', '蔬菜种植', '病虫害防治', '植物搭配'].map((topic) => (
-            <Chip 
-              key={topic}
-              label={`#${topic}`}
-              variant="outlined"
-              clickable
-              sx={{ cursor: 'pointer' }}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        共 {state.filteredPosts.length} 个帖子
+      </Typography>
+
+      {state.filteredPosts.length === 0 ? (
+        <Box sx={{ textAlign: 'center', py: 8 }}>
+          <Typography variant="body1" color="text.secondary">
+            {state.searchQuery ? '没有找到相关帖子' : '暂无帖子'}
+          </Typography>
+          {state.searchQuery && (
+            <Button 
+              variant="outlined" 
+              onClick={() => setState(prev => ({ ...prev, searchQuery: '' }))}
+              sx={{ mt: 2 }}
+            >
+              清除搜索
+            </Button>
+          )}
+        </Box>
+      ) : (
+        <Box>
+          {state.filteredPosts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              onPostClick={handlePostClick}
+              onLike={handleLike}
             />
           ))}
         </Box>
-      </Box>
+      )}
     </Container>
   );
 };
