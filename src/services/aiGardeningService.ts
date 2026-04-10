@@ -115,7 +115,7 @@ Please provide the response in JSON format with the following structure:
       };
     } catch (error) {
       console.error('Plant recognition error:', error);
-      throw createError('Failed to recognize plant image', 'RECOGNITION_ERROR', true);
+      throw createError('Failed to recognize plant image', 500, 'RECOGNITION_ERROR');
     }
   }
 
@@ -178,7 +178,7 @@ Please provide the response in JSON format:
       return analysis;
     } catch (error) {
       console.error('Balcony analysis error:', error);
-      throw createError('Failed to analyze balcony conditions', 'ANALYSIS_ERROR', true);
+      throw createError('Failed to analyze balcony conditions', 500, 'ANALYSIS_ERROR');
     }
   }
 
@@ -260,7 +260,7 @@ Return in JSON format with plant IDs from our database if available.
       }));
     } catch (error) {
       console.error('Design recommendation error:', error);
-      throw createError('Failed to generate design recommendations', 'DESIGN_ERROR', true);
+      throw createError('Failed to generate design recommendations', 500, 'DESIGN_ERROR');
     }
   }
 
@@ -305,7 +305,7 @@ Return in JSON format with plant IDs from our database if available.
       return alerts;
     } catch (error) {
       console.error('Care alert generation error:', error);
-      throw createError('Failed to generate care alerts', 'CARE_ALERTS_ERROR', true);
+      throw createError('Failed to generate care alerts', 500, 'CARE_ALERTS_ERROR');
     }
   }
 
@@ -329,7 +329,7 @@ Return in JSON format with plant IDs from our database if available.
       return plants;
     } catch (error) {
       console.error('Plant search error:', error);
-      throw createError('Failed to search plants', 'SEARCH_ERROR', true);
+      throw createError('Failed to search plants', 500, 'SEARCH_ERROR');
     }
   }
 
@@ -348,7 +348,7 @@ Return in JSON format with plant IDs from our database if available.
       });
 
       if (!plant) {
-        throw createError('Plant not found', 'PLANT_NOT_FOUND', true);
+        throw createError('Plant not found', 404, 'PLANT_NOT_FOUND');
       }
 
       return {
@@ -498,7 +498,7 @@ Return in JSON format with plant IDs from our database if available.
       });
 
       if (!plant) {
-        throw createError('Plant not found', 'PLANT_NOT_FOUND', true);
+        throw createError('Plant not found', 404, 'PLANT_NOT_FOUND');
       }
 
       // Build comprehensive prompt for AI diagnosis
@@ -565,7 +565,7 @@ Provide diagnosis in JSON format:
       };
     } catch (error) {
       console.error('Plant diagnosis error:', error);
-      throw createError('Failed to diagnose plant problem', 'DIAGNOSIS_ERROR', true);
+      throw createError('Failed to diagnose plant problem', 500, 'DIAGNOSIS_ERROR');
     }
   }
 
@@ -618,7 +618,7 @@ Provide diagnosis in JSON format:
       });
 
       if (!user) {
-        throw createError('User not found', 'USER_NOT_FOUND', true);
+        throw createError('User not found', 404, 'USER_NOT_FOUND');
       }
 
       // Get specific plant if provided
@@ -715,7 +715,7 @@ Generate optimized care recommendations in JSON format:
       };
     } catch (error) {
       console.error('Personalized care recommendations error:', error);
-      throw createError('Failed to generate personalized care recommendations', 'GENERIC_ERROR', true);
+      throw createError('Failed to generate personalized care recommendations', 500, 'GENERIC_ERROR');
     }
   }
 
